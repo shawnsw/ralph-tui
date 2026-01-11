@@ -956,3 +956,27 @@ Started: Sun 11 Jan 10:55:32 GMT 2026
   - Event-driven status (via useState) is more reliable than calling engine.getStatus()
   - Distinguishing stop reasons (complete vs idle vs stopped) improves user experience
 ---
+
+## 2026-01-11 - ralph-tui-45r.38
+- What was implemented:
+  - FEAT: Show closed tasks greyed out in TUI for drill-down
+  - Added 'closed' TaskStatus type to theme.ts for previously completed tasks
+  - Greyed-out styling in LeftPanel for closed tasks using dim colors
+  - Engine now fetches completed tasks alongside open/in_progress in engine:started event
+  - RunApp maps tracker 'completed' status to TUI 'closed' status
+  - Added 'h' key to toggle show/hide closed tasks in task list
+  - Updated keyboard shortcuts in footer and help overlay
+  - Added useEffect to clamp selectedIndex when filter changes
+  - useMemo for displayedTasks to enable filtered navigation
+- Files changed:
+  - src/tui/theme.ts (updated) - Added 'closed' to TaskStatus, colors.task.closed, statusIndicators
+  - src/tui/components/LeftPanel.tsx (updated) - Greyed-out styling for closed tasks
+  - src/engine/types.ts (updated) - Updated EngineStartedEvent.tasks comment
+  - src/engine/index.ts (updated) - Fetch completed tasks in start()
+  - src/tui/components/RunApp.tsx (updated) - Status mapping, 'h' key toggle, displayedTasks filter
+- **Learnings:**
+  - Distinguish 'done' (current session completion) from 'closed' (historical completion) for UX clarity
+  - useMemo for filtered lists enables keyboard handlers to access correct length
+  - useEffect to clamp selectedIndex prevents out-of-bounds when filter shrinks list
+  - TaskStatus type extension requires updating colors.task and statusIndicators in theme.ts
+---
