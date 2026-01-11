@@ -32,3 +32,9 @@ export {
   executeConfigShowCommand,
   printConfigHelp,
 } from './config.js';
+
+export {
+  executeSetupCommand,
+  parseSetupArgs,
+  printSetupHelp,
+} from './setup.js';

@@ -34,12 +34,20 @@ import { getTrackerRegistry } from '../plugins/trackers/registry.js';
 import { RunApp } from '../tui/components/RunApp.js';
 import type { TrackerTask } from '../plugins/trackers/types.js';
 import type { RalphConfig } from '../config/types.js';
+import { projectConfigExists, runSetupWizard } from '../setup/index.js';
+
+/**
+ * Extended runtime options with noSetup flag
+ */
+interface ExtendedRuntimeOptions extends RuntimeOptions {
+  noSetup?: boolean;
+}
 
 /**
  * Parse CLI arguments for the run command
  */
-export function parseRunArgs(args: string[]): RuntimeOptions {
-  const options: RuntimeOptions = {};
+export function parseRunArgs(args: string[]): ExtendedRuntimeOptions {
+  const options: ExtendedRuntimeOptions = {};
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -119,6 +127,10 @@ export function parseRunArgs(args: string[]): RuntimeOptions {
       case '--headless':
         options.headless = true;
         break;
+
+      case '--no-setup':
+        options.noSetup = true;
+        break;
     }
   }
 
@@ -146,6 +158,7 @@ Options:
   --resume            Resume existing session
   --force             Force start even if locked
   --headless          Run without TUI
+  --no-setup          Skip interactive setup even if no config exists
 
 Examples:
   ralph-tui run                              # Start with defaults
@@ -384,6 +397,37 @@ export async function executeRunCommand(args: string[]): Promise<void> {
 
   // Parse arguments
   const options = parseRunArgs(args);
+  const cwd = options.cwd ?? process.cwd();
+
+  // Check if project config exists
+  const configExists = await projectConfigExists(cwd);
+
+  if (!configExists && !options.noSetup) {
+    // No config found - offer to run setup
+    console.log('');
+    console.log('No .ralph-tui.yaml configuration found in this project.');
+    console.log('');
+
+    // Run the setup wizard
+    const result = await runSetupWizard({ cwd });
+
+    if (!result.success) {
+      if (result.cancelled) {
+        console.log('Run "ralph-tui setup" to configure later,');
+        console.log('or use "ralph-tui run --no-setup" to skip setup.');
+        return;
+      }
+      console.error('Setup failed:', result.error);
+      process.exit(1);
+    }
+
+    // Setup completed, continue with run
+    console.log('');
+    console.log('Setup complete! Starting Ralph...');
+    console.log('');
+  } else if (!configExists && options.noSetup) {
+    console.log('No .ralph-tui.yaml found. Using default configuration.');
+  }
 
   console.log('Initializing Ralph TUI...');
 

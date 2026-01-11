@@ -14,6 +14,7 @@ import {
   executeStatusCommand,
   executeResumeCommand,
   executeConfigCommand,
+  executeSetupCommand,
 } from './commands/index.js';
 
 /**
@@ -30,6 +31,7 @@ Commands:
   run [options]       Start Ralph execution
   resume [options]    Resume an interrupted session
   status              Check session status
+  setup [options]     Run interactive project setup
   config show         Display merged configuration
   plugins agents      List available agent plugins
   plugins trackers    List available tracker plugins
@@ -44,6 +46,7 @@ Run Options:
   --iterations <n>    Maximum iterations (0 = unlimited)
   --resume            Resume existing session (deprecated, use 'resume' command)
   --headless          Run without TUI
+  --no-setup          Skip interactive setup even if no config exists
 
 Resume Options:
   --cwd <path>        Working directory
@@ -96,6 +99,12 @@ async function handleSubcommand(args: string[]): Promise<boolean> {
   // Config command
   if (command === 'config') {
     await executeConfigCommand(args.slice(1));
+    return true;
+  }
+
+  // Setup command
+  if (command === 'setup') {
+    await executeSetupCommand(args.slice(1));
     return true;
   }
 

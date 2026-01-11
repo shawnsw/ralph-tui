@@ -321,3 +321,56 @@ Started: Sun 11 Jan 10:55:32 GMT 2026
   - Event-driven iteration completion hooks allow persistence without tight coupling
   - Session cleanup on completion prevents stale data; interrupted sessions remain resumable
 ---
+
+## 2026-01-11 - ralph-tui-45r.2
+- What was implemented:
+  - US-002: Configuration System with Zod validation
+  - Zod schema (src/config/schema.ts) for runtime config validation with helpful error messages
+  - Project-level config support (.ralph-tui.yaml) that overrides global (~/.config/ralph-tui/config.yaml)
+  - Config file search walks up directory tree from cwd to find project config
+  - Deep merge strategy: project overrides global for scalars, replaces arrays entirely
+  - `ralph-tui config show` command to display merged configuration with source info
+  - `ralph-tui config help` with example config and documentation
+  - Shorthand fields: agent, tracker, agentOptions, trackerOptions, autoCommit
+- Files changed:
+  - src/config/schema.ts (new) - Zod schemas and validation functions
+  - src/config/types.ts (updated) - Added new StoredConfig fields
+  - src/config/index.ts (updated) - Multi-file loading, merge logic, validation integration
+  - src/commands/config.ts (new) - Config show and help commands
+  - src/commands/index.ts (updated) - Export config commands
+  - src/cli.tsx (updated) - Handle config subcommand
+- **Learnings:**
+  - Zod provides type inference from schemas, making the schema the single source of truth
+  - Layered config (global → project → CLI) is a common pattern for dev tools
+  - Array replacement vs merge: replacing gives projects full control over plugin lists
+  - File search upward from cwd is standard for project config (like .gitignore, .eslintrc)
+---
+
+## 2026-01-11 - ralph-tui-45r.3
+- What was implemented:
+  - US-003: Interactive Project Setup wizard
+  - Detect when no .ralph-tui.yaml exists in current directory
+  - Prompt for issue tracker selection from installed tracker plugins
+  - Show tracker-specific follow-up questions via getSetupQuestions()
+  - Auto-detect installed agent CLIs (checks binary availability)
+  - Prompt for max iterations per run (default: 10)
+  - Prompt for auto-commit on task completion (yes/no)
+  - Save configuration to .ralph-tui.yaml with YAML serialization
+  - Add --no-setup flag to skip interactive wizard
+  - Styled terminal prompts with ANSI colors
+- Files changed:
+  - src/setup/types.ts (new) - Type definitions for wizard state, answers, plugin detection
+  - src/setup/prompts.ts (new) - Terminal prompts: text, select, boolean, number, path
+  - src/setup/wizard.ts (new) - Main wizard logic, plugin detection, config saving
+  - src/setup/index.ts (new) - Module exports
+  - src/commands/setup.ts (new) - Setup command handler with --force flag
+  - src/commands/index.ts (updated) - Export setup command
+  - src/commands/run.tsx (updated) - Integrate setup detection on run
+  - src/cli.tsx (updated) - Add setup command and --no-setup documentation
+- **Learnings:**
+  - Node.js readline works well for cross-platform terminal input
+  - Plugin registries provide getSetupQuestions() for tracker-specific config
+  - The factory pattern + singleton registry decouple plugin creation from discovery
+  - Ctrl+C handling requires catching readline close errors gracefully
+  - TypeScript union types need explicit handling in switch exhaustiveness checks
+---
