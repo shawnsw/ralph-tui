@@ -7,11 +7,15 @@ import {
   getTrackerRegistry,
   registerBuiltinTrackers,
 } from '../plugins/trackers/index.js';
+import {
+  getAgentRegistry,
+  registerBuiltinAgents,
+} from '../plugins/agents/index.js';
 
 /**
- * Output format for CLI commands
+ * Output format for tracker plugin CLI commands
  */
-interface PluginInfo {
+interface TrackerPluginInfo {
   id: string;
   name: string;
   description: string;
@@ -25,10 +29,27 @@ interface PluginInfo {
 }
 
 /**
+ * Output format for agent plugin CLI commands
+ */
+interface AgentPluginInfo {
+  id: string;
+  name: string;
+  description: string;
+  version: string;
+  builtin: boolean;
+  defaultCommand: string;
+  features: {
+    streaming: boolean;
+    interrupt: boolean;
+    fileContext: boolean;
+  };
+}
+
+/**
  * List all available tracker plugins.
  * Called via: ralph-tui plugins trackers
  */
-export async function listTrackerPlugins(): Promise<PluginInfo[]> {
+export async function listTrackerPlugins(): Promise<TrackerPluginInfo[]> {
   const registry = getTrackerRegistry();
 
   // Register built-in plugins if not already registered
@@ -79,6 +100,71 @@ export async function printTrackerPlugins(): Promise<void> {
     if (plugin.features.bidirectionalSync) features.push('sync');
     if (plugin.features.hierarchy) features.push('hierarchy');
     if (plugin.features.dependencies) features.push('dependencies');
+    console.log(`    Features:    ${features.join(', ') || 'none'}`);
+
+    console.log('─'.repeat(80));
+  }
+
+  console.log(`\nTotal: ${plugins.length} plugin(s)\n`);
+}
+
+/**
+ * List all available agent plugins.
+ * Called via: ralph-tui plugins agents
+ */
+export async function listAgentPlugins(): Promise<AgentPluginInfo[]> {
+  const registry = getAgentRegistry();
+
+  // Register built-in plugins if not already registered
+  registerBuiltinAgents();
+
+  // Discover user plugins
+  await registry.initialize();
+
+  // Get all registered plugins
+  const plugins = registry.getRegisteredPlugins();
+
+  return plugins.map((meta) => ({
+    id: meta.id,
+    name: meta.name,
+    description: meta.description,
+    version: meta.version,
+    builtin: registry.isBuiltin(meta.id),
+    defaultCommand: meta.defaultCommand,
+    features: {
+      streaming: meta.supportsStreaming,
+      interrupt: meta.supportsInterrupt,
+      fileContext: meta.supportsFileContext,
+    },
+  }));
+}
+
+/**
+ * Print agent plugins to console in a formatted table.
+ */
+export async function printAgentPlugins(): Promise<void> {
+  const plugins = await listAgentPlugins();
+
+  if (plugins.length === 0) {
+    console.log('No agent plugins found.');
+    return;
+  }
+
+  console.log('\nAvailable Agent Plugins:\n');
+  console.log('─'.repeat(80));
+
+  for (const plugin of plugins) {
+    const typeLabel = plugin.builtin ? '(built-in)' : '(user)';
+    console.log(`  ${plugin.id} ${typeLabel}`);
+    console.log(`    Name:        ${plugin.name}`);
+    console.log(`    Description: ${plugin.description}`);
+    console.log(`    Version:     ${plugin.version}`);
+    console.log(`    Command:     ${plugin.defaultCommand}`);
+
+    const features: string[] = [];
+    if (plugin.features.streaming) features.push('streaming');
+    if (plugin.features.interrupt) features.push('interrupt');
+    if (plugin.features.fileContext) features.push('file-context');
     console.log(`    Features:    ${features.join(', ') || 'none'}`);
 
     console.log('─'.repeat(80));

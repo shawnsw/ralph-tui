@@ -3,4 +3,9 @@
  * Exports all CLI command handlers for the ralph-tui application.
  */
 
-export { listTrackerPlugins, printTrackerPlugins } from './plugins.js';
+export {
+  listTrackerPlugins,
+  printTrackerPlugins,
+  listAgentPlugins,
+  printAgentPlugins,
+} from './plugins.js';

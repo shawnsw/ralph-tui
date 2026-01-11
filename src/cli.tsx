@@ -7,7 +7,7 @@
 import { createCliRenderer } from '@opentui/core';
 import { createRoot } from '@opentui/react';
 import { App } from './tui/index.js';
-import { printTrackerPlugins } from './commands/index.js';
+import { printTrackerPlugins, printAgentPlugins } from './commands/index.js';
 
 /**
  * Show CLI help message.
@@ -20,11 +20,13 @@ Usage: ralph-tui [command]
 
 Commands:
   (none)              Launch the interactive TUI
+  plugins agents      List available agent plugins
   plugins trackers    List available tracker plugins
   help, --help, -h    Show this help message
 
 Examples:
   ralph-tui                  # Start the TUI
+  ralph-tui plugins agents   # List agent plugins
   ralph-tui plugins trackers # List tracker plugins
 `);
 }
@@ -46,6 +48,11 @@ async function handleSubcommand(args: string[]): Promise<boolean> {
   if (command === 'plugins') {
     const subcommand = args[1];
 
+    if (subcommand === 'agents') {
+      await printAgentPlugins();
+      return true;
+    }
+
     if (subcommand === 'trackers') {
       await printTrackerPlugins();
       return true;
@@ -53,7 +60,7 @@ async function handleSubcommand(args: string[]): Promise<boolean> {
 
     // Unknown plugins subcommand
     console.error(`Unknown plugins subcommand: ${subcommand || '(none)'}`);
-    console.log('Available: plugins trackers');
+    console.log('Available: plugins agents, plugins trackers');
     return true;
   }
 
