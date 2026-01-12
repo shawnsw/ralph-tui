@@ -35,6 +35,7 @@ import {
   releaseLockNew,
   registerLockCleanupHandlers,
   checkLock,
+  detectAndRecoverStaleSession,
   type PersistedSessionState,
 } from '../session/index.js';
 import { ExecutionEngine } from '../engine/index.js';
@@ -1177,6 +1178,19 @@ export async function executeRunCommand(args: string[]): Promise<void> {
     }
 
     console.log(`Selected epic: ${selectedEpic.id} - ${selectedEpic.title}`);
+    console.log('');
+  }
+
+  // Detect and recover stale sessions EARLY (before any prompts)
+  // This fixes the issue where killing the TUI mid-task leaves activeTaskIds populated
+  const staleRecovery = await detectAndRecoverStaleSession(config.cwd, checkLock);
+  if (staleRecovery.wasStale) {
+    console.log('');
+    console.log('⚠️  Recovered stale session');
+    if (staleRecovery.clearedTaskCount > 0) {
+      console.log(`   Cleared ${staleRecovery.clearedTaskCount} stuck in-progress task(s)`);
+    }
+    console.log('   Session status set to "interrupted" (resumable)');
     console.log('');
   }
 

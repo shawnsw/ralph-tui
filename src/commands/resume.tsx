@@ -20,6 +20,8 @@ import {
   releaseLock,
   checkSession,
   cleanStaleLock,
+  checkLock,
+  detectAndRecoverStaleSession,
   type PersistedSessionState,
 } from '../session/index.js';
 import { buildConfig, validateConfig } from '../config/index.js';
@@ -270,6 +272,19 @@ export async function executeResumeCommand(args: string[]): Promise<void> {
     console.error('');
     console.error('Start a new session with: ralph-tui run');
     process.exit(1);
+  }
+
+  // Detect and recover stale sessions EARLY
+  // This fixes the issue where killing the TUI mid-task leaves activeTaskIds populated
+  const staleRecovery = await detectAndRecoverStaleSession(cwd, checkLock);
+  if (staleRecovery.wasStale) {
+    console.log('');
+    console.log('⚠️  Recovered stale session');
+    if (staleRecovery.clearedTaskCount > 0) {
+      console.log(`   Cleared ${staleRecovery.clearedTaskCount} stuck in-progress task(s)`);
+    }
+    console.log('   Session status set to "interrupted" (resumable)');
+    console.log('');
   }
 
   // Load session

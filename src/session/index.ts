@@ -367,6 +367,7 @@ export {
   setSubagentPanelVisible,
   isSessionResumable,
   getSessionSummary,
+  detectAndRecoverStaleSession,
 } from './persistence.js';
 
 export type {
@@ -374,6 +375,7 @@ export type {
   TrackerStateSnapshot,
   PersistedSessionState,
   PersistedIterationResult,
+  StaleSessionRecoveryResult,
 } from './persistence.js';
 
 // Re-export lock module with single instance support

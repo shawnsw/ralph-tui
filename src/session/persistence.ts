@@ -481,6 +481,90 @@ export function isSessionResumable(state: PersistedSessionState): boolean {
 }
 
 /**
+ * Result of stale session detection and recovery
+ */
+export interface StaleSessionRecoveryResult {
+  /** Whether a stale session was detected */
+  wasStale: boolean;
+  /** Number of active task IDs that were cleared */
+  clearedTaskCount: number;
+  /** Previous status before recovery */
+  previousStatus?: SessionStatus;
+}
+
+/**
+ * Detect and recover from a stale session.
+ *
+ * A session is considered stale if:
+ * 1. It has status 'running' (indicating it was active)
+ * 2. But the lock file is stale (process no longer running) or missing
+ *
+ * Recovery actions:
+ * 1. Clear activeTaskIds (tasks that were being worked on)
+ * 2. Set status to 'interrupted' (so it can be resumed)
+ * 3. Save the recovered session
+ *
+ * This should be called early in both run and resume commands,
+ * BEFORE any prompts or session decisions are made.
+ *
+ * @param cwd Working directory
+ * @param checkLock Function to check lock status (passed in to avoid circular deps)
+ * @returns Recovery result
+ */
+export async function detectAndRecoverStaleSession(
+  cwd: string,
+  checkLock: (cwd: string) => Promise<{ isLocked: boolean; isStale: boolean }>
+): Promise<StaleSessionRecoveryResult> {
+  const result: StaleSessionRecoveryResult = {
+    wasStale: false,
+    clearedTaskCount: 0,
+  };
+
+  // Check if session file exists
+  const hasSession = await hasPersistedSession(cwd);
+  if (!hasSession) {
+    return result;
+  }
+
+  // Load session
+  const session = await loadPersistedSession(cwd);
+  if (!session) {
+    return result;
+  }
+
+  // Only recover if status is 'running' - this indicates an ungraceful exit
+  if (session.status !== 'running') {
+    return result;
+  }
+
+  // Check if lock is stale (process no longer running)
+  const lockStatus = await checkLock(cwd);
+
+  // If lock is valid (held by running process), don't recover
+  if (lockStatus.isLocked && !lockStatus.isStale) {
+    return result;
+  }
+
+  // Session is stale - recover it
+  result.wasStale = true;
+  result.previousStatus = session.status;
+  result.clearedTaskCount = session.activeTaskIds?.length ?? 0;
+
+  // Clear active tasks and set status to interrupted
+  const recoveredSession: PersistedSessionState = {
+    ...session,
+    status: 'interrupted',
+    activeTaskIds: [],
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Save recovered session
+  await savePersistedSession(recoveredSession);
+
+  return result;
+}
+
+/**
  * Get session summary for display
  */
 export function getSessionSummary(state: PersistedSessionState): {
