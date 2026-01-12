@@ -109,6 +109,7 @@ export const fullKeyboardShortcuts = [
   { key: 'd', description: 'Toggle progress dashboard', category: 'Views' },
   { key: 'h', description: 'Toggle show/hide closed tasks', category: 'Views' },
   { key: 'v', description: 'Toggle iterations / tasks view', category: 'Views' },
+  { key: 'o', description: 'Toggle details / output view', category: 'Views' },
   { key: '↑ / k', description: 'Move selection up', category: 'Navigation' },
   { key: '↓ / j', description: 'Move selection down', category: 'Navigation' },
   { key: 'Enter', description: 'View selected item details', category: 'Navigation' },

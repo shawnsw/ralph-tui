@@ -109,6 +109,13 @@ export interface LeftPanelProps {
 }
 
 /**
+ * View mode for the right panel details area
+ * - 'details': Show task metadata (title, ID, status, description, dependencies)
+ * - 'output': Show full-height scrollable iteration output
+ */
+export type DetailsViewMode = 'details' | 'output';
+
+/**
  * Props for the RightPanel (details) component
  */
 export interface RightPanelProps {
@@ -118,6 +125,10 @@ export interface RightPanelProps {
   currentIteration: number;
   /** Current iteration output/log */
   iterationOutput?: string;
+  /** View mode for the details panel (details or output) */
+  viewMode?: DetailsViewMode;
+  /** Callback when view mode should be toggled */
+  onToggleViewMode?: () => void;
 }
 
 /**

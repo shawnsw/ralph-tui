@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { colors, layout } from '../theme.js';
 import type { RalphStatus, TaskStatus } from '../theme.js';
-import type { TaskItem, BlockerInfo } from '../types.js';
+import type { TaskItem, BlockerInfo, DetailsViewMode } from '../types.js';
 import { Header } from './Header.js';
 import { Footer } from './Footer.js';
 import { LeftPanel } from './LeftPanel.js';
@@ -268,6 +268,8 @@ export function RunApp({
   const [epicLoaderError, setEpicLoaderError] = useState<string | undefined>(undefined);
   // Determine epic loader mode based on tracker type
   const epicLoaderMode: EpicLoaderMode = trackerType === 'json' ? 'file-prompt' : 'list';
+  // Details panel view mode (details or output) - default to details
+  const [detailsViewMode, setDetailsViewMode] = useState<DetailsViewMode>('details');
 
   // Filter and sort tasks for display
   // Sort order: active → actionable → blocked → done → closed
@@ -351,6 +353,8 @@ export function RunApp({
           setCurrentTaskId(event.task.id);
           setCurrentTaskTitle(event.task.title);
           setStatus('executing');
+          // Auto-switch to output view when iteration starts
+          setDetailsViewMode('output');
           // Update task list to show current task as active
           setTasks((prev) =>
             prev.map((t) =>
@@ -626,6 +630,11 @@ export function RunApp({
           }
           break;
 
+        case 'o':
+          // Toggle between details and output view in the right panel
+          setDetailsViewMode((prev) => (prev === 'details' ? 'output' : 'details'));
+          break;
+
         case 'return':
         case 'enter':
           // When in ready state, Enter starts the execution
@@ -816,6 +825,7 @@ export function RunApp({
               selectedTask={selectedTask}
               currentIteration={selectedTaskIteration.iteration}
               iterationOutput={selectedTaskIteration.output}
+              viewMode={detailsViewMode}
             />
           </>
         ) : (
@@ -831,6 +841,7 @@ export function RunApp({
               selectedTask={selectedTask}
               currentIteration={selectedTaskIteration.iteration}
               iterationOutput={selectedTaskIteration.output}
+              viewMode={detailsViewMode}
             />
           </>
         )}
