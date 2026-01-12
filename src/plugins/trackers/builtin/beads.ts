@@ -334,7 +334,8 @@ export class BeadsTrackerPlugin extends BaseTrackerPlugin {
 
   async getTasks(filter?: TaskFilter): Promise<TrackerTask[]> {
     // Build bd list command args
-    const args = ['list', '--json'];
+    // Use --all to include closed issues (TUI filters visibility via showClosedTasks state)
+    const args = ['list', '--json', '--all'];
 
     // Filter by parent (epic)
     if (filter?.parentId) {
