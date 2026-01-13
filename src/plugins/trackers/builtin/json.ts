@@ -89,7 +89,20 @@ export class PrdJsonSchemaError extends Error {
   ) {
     super(message);
     this.name = 'PrdJsonSchemaError';
+    Object.setPrototypeOf(this, PrdJsonSchemaError.prototype);
   }
+}
+
+/**
+ * Log a PrdJsonSchemaError to console with formatted details.
+ */
+function logPrdSchemaError(err: PrdJsonSchemaError): void {
+  console.error(`\n${err.message}\n`);
+  console.error('Issues found:');
+  for (const detail of err.details) {
+    console.error(`  - ${detail}`);
+  }
+  console.error(`\nHow to fix:\n${err.suggestion}\n`);
 }
 
 /**
@@ -401,12 +414,7 @@ export class JsonTrackerPlugin extends BaseTrackerPlugin {
       return this.filterTasks(tasks, filter);
     } catch (err) {
       if (err instanceof PrdJsonSchemaError) {
-        console.error(`\n${err.message}\n`);
-        console.error('Issues found:');
-        for (const detail of err.details) {
-          console.error(`  - ${detail}`);
-        }
-        console.error(`\nHow to fix:\n${err.suggestion}\n`);
+        logPrdSchemaError(err);
       } else {
         console.error('Failed to read prd.json:', err);
       }
@@ -613,12 +621,7 @@ export class JsonTrackerPlugin extends BaseTrackerPlugin {
       return [epic];
     } catch (err) {
       if (err instanceof PrdJsonSchemaError) {
-        console.error(`\n${err.message}\n`);
-        console.error('Issues found:');
-        for (const detail of err.details) {
-          console.error(`  - ${detail}`);
-        }
-        console.error(`\nHow to fix:\n${err.suggestion}\n`);
+        logPrdSchemaError(err);
       } else {
         console.error('Failed to read prd.json for getEpics:', err);
       }

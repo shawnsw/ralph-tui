@@ -509,11 +509,11 @@ async function executeJsonConversion(
     validatePrdJsonSchema(prdJson, outputPath);
   } catch (err) {
     if (err instanceof PrdJsonSchemaError) {
-      printError('Generated prd.json failed schema validation:');
+      printError('Internal error: Generated prd.json failed schema validation.');
+      printError('This indicates a bug in the PRD parser. Please report this issue.');
       for (const detail of err.details) {
         console.error(`  - ${detail}`);
       }
-      console.error(`\n${err.suggestion}`);
       process.exit(1);
     }
     throw err;
