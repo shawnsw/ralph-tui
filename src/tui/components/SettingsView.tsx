@@ -140,6 +140,21 @@ function buildSettingDefinitions(
       }),
       requiresRestart: false,
     },
+    {
+      key: 'notifications',
+      label: 'Notifications',
+      type: 'boolean',
+      description: 'Enable desktop notifications for task completion',
+      getValue: (config) => config.notifications?.enabled ?? true,
+      setValue: (config, value) => ({
+        ...config,
+        notifications: {
+          ...config.notifications,
+          enabled: value as boolean,
+        },
+      }),
+      requiresRestart: false,
+    },
   ];
 }
 
