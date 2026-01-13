@@ -371,43 +371,52 @@ function Img(props: React.ImgHTMLAttributes<HTMLImageElement>) {
 }
 
 /**
+ * Base MDX components object for direct import.
+ * Use this when you need components outside of a React component context
+ * (e.g., in server components with compileMDX).
+ */
+export const mdxComponents: MDXComponents = {
+  // HTML element overrides
+  a: CustomLink,
+  h1: H1,
+  h2: H2,
+  h3: H3,
+  h4: H4,
+  p: P,
+  ul: Ul,
+  ol: Ol,
+  blockquote: Blockquote,
+  pre: Pre,
+  code: Code,
+  hr: Hr,
+  table: Table,
+  th: Th,
+  td: Td,
+  img: Img,
+
+  // Custom components available in MDX
+  Callout,
+  CodeBlock,
+
+  // Steps component for step-by-step instructions
+  Steps,
+  Step,
+
+  // Tabs components for tabbed content (e.g., package managers)
+  Tabs,
+  TabsRoot,
+  TabsList,
+  TabsTrigger,
+  TabsContent,
+};
+
+/**
  * Returns custom MDX components for use with @next/mdx.
+ * This follows the convention expected by @next/mdx.
  */
 export function useMDXComponents(components: MDXComponents): MDXComponents {
   return {
-    // HTML element overrides
-    a: CustomLink,
-    h1: H1,
-    h2: H2,
-    h3: H3,
-    h4: H4,
-    p: P,
-    ul: Ul,
-    ol: Ol,
-    blockquote: Blockquote,
-    pre: Pre,
-    code: Code,
-    hr: Hr,
-    table: Table,
-    th: Th,
-    td: Td,
-    img: Img,
-
-    // Custom components available in MDX
-    Callout,
-    CodeBlock,
-
-    // Steps component for step-by-step instructions
-    Steps,
-    Step,
-
-    // Tabs components for tabbed content (e.g., package managers)
-    Tabs,
-    TabsRoot,
-    TabsList,
-    TabsTrigger,
-    TabsContent,
-
+    ...mdxComponents,
     // Spread any additional components
     ...components,
   };

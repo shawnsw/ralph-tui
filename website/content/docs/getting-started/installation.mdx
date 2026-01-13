@@ -1,0 +1,130 @@
+---
+title: Installation
+description: Install Ralph TUI using bun, npm, or from source. Includes prerequisites and agent setup.
+---
+
+## Prerequisites
+
+Before installing Ralph TUI, ensure you have the following:
+
+### Bun Runtime
+
+Ralph TUI requires **Bun >= 1.0.0** as its runtime. Bun is required because Ralph TUI uses [OpenTUI](https://github.com/anomalyco/opentui), which depends on Bun's native features.
+
+<Tabs
+  items={[
+    { label: "macOS/Linux", value: "unix", content: "```bash\ncurl -fsSL https://bun.sh/install | bash\n```" },
+    { label: "Windows", value: "windows", content: "```powershell\npowershell -c \"irm bun.sh/install.ps1 | iex\"\n```" },
+    { label: "Homebrew", value: "brew", content: "```bash\nbrew install oven-sh/bun/bun\n```" }
+  ]}
+/>
+
+Verify the installation:
+
+```bash
+bun --version
+# Should output 1.0.0 or higher
+```
+
+### AI Coding Agent
+
+Ralph TUI orchestrates AI coding agents. You'll need at least one installed:
+
+<Tabs
+  items={[
+    { label: "Claude Code", value: "claude", content: "```bash\n# Install via npm\nnpm install -g @anthropic-ai/claude-code\n\n# Verify installation\nclaude --version\n```\n\nClaude Code is Anthropic's official CLI for Claude. See the [Claude Code documentation](https://docs.anthropic.com/en/docs/claude-code) for setup details." },
+    { label: "OpenCode", value: "opencode", content: "```bash\n# Install via npm\nnpm install -g opencode\n\n# Verify installation\nopencode --version\n```\n\nOpenCode is an open-source alternative supporting multiple AI providers. See the [OpenCode repository](https://github.com/opencode-ai/opencode) for details." }
+  ]}
+/>
+
+## Installation Methods
+
+Choose your preferred installation method:
+
+<Tabs
+  items={[
+    { label: "bun (Recommended)", value: "bun", content: "```bash\n# Install globally with Bun\nbun install -g ralph-tui\n\n# Verify installation\nralph-tui --version\n```\n\nBun is the recommended package manager for Ralph TUI as it provides the fastest installation and best runtime compatibility." },
+    { label: "npm", value: "npm", content: "```bash\n# Install globally with npm\nnpm install -g ralph-tui\n\n# Verify installation\nralph-tui --version\n```\n\nNote: Even when installed via npm, Ralph TUI will use Bun as its runtime." },
+    { label: "bunx (No Install)", value: "bunx", content: "```bash\n# Run directly without installing\nbunx ralph-tui\n\n# Or with specific commands\nbunx ralph-tui run --prd ./prd.json\n```\n\nUseful for trying Ralph TUI without a global installation." },
+    { label: "From Source", value: "source", content: "```bash\n# Clone the repository\ngit clone https://github.com/subsy/ralph-tui.git\ncd ralph-tui\n\n# Install dependencies\nbun install\n\n# Run in development mode\nbun run dev\n\n# Or build and link globally\nbun run build\nbun link\n```\n\nRecommended for contributors or if you want to customize Ralph TUI." }
+  ]}
+/>
+
+## Post-Installation Setup
+
+After installation, initialize Ralph TUI in your project:
+
+```bash
+cd your-project
+ralph-tui setup
+```
+
+The setup wizard will:
+
+1. **Detect agents** - Find installed AI coding agents (Claude Code, OpenCode)
+2. **Create configuration** - Generate `.ralph-tui/config.toml` with your preferences
+3. **Install skills** - Add bundled skills for PRD creation and task conversion
+4. **Detect trackers** - Optionally find existing prd.json or Beads setups
+
+<Callout type="tip">
+You can re-run `ralph-tui setup` at any time to reconfigure your project.
+</Callout>
+
+## Verifying Installation
+
+Run these commands to verify everything is set up correctly:
+
+```bash
+# Check Ralph TUI version
+ralph-tui --version
+
+# List detected agents
+ralph-tui plugins agents
+
+# List detected trackers
+ralph-tui plugins trackers
+
+# View current configuration
+ralph-tui config show
+```
+
+## Troubleshooting
+
+### "Agent not found"
+
+If Ralph TUI can't find your AI agent:
+
+1. Verify the agent CLI is installed: `which claude` or `which opencode`
+2. Ensure the agent is in your PATH
+3. Run `ralph-tui plugins agents` to see detected agents
+
+### "bun: command not found"
+
+Bun may not be in your PATH. Try:
+
+```bash
+# Add to your shell profile (.bashrc, .zshrc, etc.)
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+```
+
+Then restart your terminal or run `source ~/.bashrc` (or equivalent).
+
+### Permission Errors
+
+If you encounter permission errors during global installation:
+
+<Tabs
+  items={[
+    { label: "bun", value: "bun-perm", content: "Bun installs packages to `~/.bun/install/global` by default, which shouldn't require elevated permissions. If you see errors, check that directory exists and is writable:\n\n```bash\nmkdir -p ~/.bun/install/global\n```" },
+    { label: "npm", value: "npm-perm", content: "Configure npm to use a user-owned directory:\n\n```bash\nmkdir ~/.npm-global\nnpm config set prefix '~/.npm-global'\nexport PATH=~/.npm-global/bin:$PATH\n```\n\nAdd the export to your shell profile for persistence." }
+  ]}
+/>
+
+## Next Steps
+
+With Ralph TUI installed:
+
+- **[Quick Start](/docs/getting-started/quick-start)** - Get running in 5 minutes
+- **[CLI Commands](/docs/cli/overview)** - Learn all available commands
+- **[Configuration](/docs/configuration/overview)** - Customize your setup
