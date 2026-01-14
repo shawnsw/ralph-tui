@@ -155,6 +155,10 @@ export interface RightPanelProps {
   onToggleViewMode?: () => void;
   /** Timing information for the iteration (optional) */
   iterationTiming?: IterationTimingInfo;
+  /** Name of the agent being used */
+  agentName?: string;
+  /** Model being used (provider/model format) */
+  currentModel?: string;
   /**
    * Subagent tracing detail level.
    * Controls how much subagent information is shown:

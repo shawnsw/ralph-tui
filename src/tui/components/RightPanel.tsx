@@ -531,6 +531,8 @@ function TaskOutputView({
   currentIteration,
   iterationOutput,
   iterationTiming,
+  agentName,
+  currentModel,
   subagentDetailLevel = 'off',
   subagentTree = [],
   collapsedSubagents = new Set(),
@@ -541,6 +543,8 @@ function TaskOutputView({
   currentIteration: number;
   iterationOutput?: string;
   iterationTiming?: IterationTimingInfo;
+  agentName?: string;
+  currentModel?: string;
   subagentDetailLevel?: SubagentDetailLevel;
   subagentTree?: SubagentTreeNode[];
   collapsedSubagents?: Set<string>;
@@ -566,15 +570,34 @@ function TaskOutputView({
     return parseAgentOutput(iterationOutput);
   }, [iterationOutput, iterationTiming?.isRunning]);
 
+  // Parse model info for display
+  const modelDisplay = currentModel
+    ? (() => {
+        const [provider, model] = currentModel.includes('/') ? currentModel.split('/') : ['', currentModel];
+        return { provider, model, full: currentModel };
+      })()
+    : null;
+
   return (
     <box style={{ flexDirection: 'column', padding: 1, flexGrow: 1 }}>
-      {/* Compact task header */}
-      <box style={{ marginBottom: 1 }}>
-        <text>
-          <span fg={statusColor}>{statusIndicator}</span>
-          <span fg={colors.fg.primary}> {task.title}</span>
-          <span fg={colors.fg.muted}> ({task.id})</span>
-        </text>
+      {/* Compact task header with agent/model info */}
+      <box style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 1 }}>
+        <box>
+          <text>
+            <span fg={statusColor}>{statusIndicator}</span>
+            <span fg={colors.fg.primary}> {task.title}</span>
+            <span fg={colors.fg.muted}> ({task.id})</span>
+          </text>
+        </box>
+        {(agentName || modelDisplay) && (
+          <box style={{ flexDirection: 'row', gap: 1 }}>
+            {agentName && <text fg={colors.accent.secondary}>{agentName}</text>}
+            {agentName && modelDisplay && <span fg={colors.fg.muted}>|</span>}
+            {modelDisplay && (
+              <text fg={colors.accent.primary}>{modelDisplay.provider}/{modelDisplay.model}</text>
+            )}
+          </box>
+        )}
       </box>
 
       {/* Timing summary - shows start/end/duration */}
@@ -644,6 +667,8 @@ function TaskDetails({
   iterationOutput,
   viewMode = 'details',
   iterationTiming,
+  agentName,
+  currentModel,
   subagentDetailLevel,
   subagentTree,
   collapsedSubagents,
@@ -655,6 +680,8 @@ function TaskDetails({
   iterationOutput?: string;
   viewMode?: DetailsViewMode;
   iterationTiming?: IterationTimingInfo;
+  agentName?: string;
+  currentModel?: string;
   subagentDetailLevel?: SubagentDetailLevel;
   subagentTree?: SubagentTreeNode[];
   collapsedSubagents?: Set<string>;
@@ -668,6 +695,8 @@ function TaskDetails({
         currentIteration={currentIteration}
         iterationOutput={iterationOutput}
         iterationTiming={iterationTiming}
+        agentName={agentName}
+        currentModel={currentModel}
         subagentDetailLevel={subagentDetailLevel}
         subagentTree={subagentTree}
         collapsedSubagents={collapsedSubagents}
@@ -689,6 +718,8 @@ export function RightPanel({
   iterationOutput,
   viewMode = 'details',
   iterationTiming,
+  agentName,
+  currentModel,
   subagentDetailLevel = 'off',
   subagentTree,
   collapsedSubagents,
@@ -720,6 +751,8 @@ export function RightPanel({
           iterationOutput={iterationOutput}
           viewMode={viewMode}
           iterationTiming={iterationTiming}
+          agentName={agentName}
+          currentModel={currentModel}
           subagentDetailLevel={subagentDetailLevel}
           subagentTree={subagentTree}
           collapsedSubagents={collapsedSubagents}

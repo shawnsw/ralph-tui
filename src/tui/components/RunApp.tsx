@@ -1153,6 +1153,7 @@ export function RunApp({
         <ProgressDashboard
           status={status}
           agentName={agentName}
+          currentModel={currentModel}
           trackerName={trackerName || 'beads'}
           epicName={epicName}
           currentTaskId={currentTaskId}
@@ -1190,6 +1191,8 @@ export function RunApp({
               iterationOutput={selectedTaskIteration.output}
               viewMode={detailsViewMode}
               iterationTiming={selectedTaskIteration.timing}
+              agentName={agentName}
+              currentModel={currentModel}
               subagentDetailLevel={subagentDetailLevel}
               subagentTree={subagentTree}
               collapsedSubagents={collapsedSubagents}
@@ -1221,6 +1224,8 @@ export function RunApp({
               iterationOutput={selectedTaskIteration.output}
               viewMode={detailsViewMode}
               iterationTiming={selectedTaskIteration.timing}
+              agentName={agentName}
+              currentModel={currentModel}
               subagentDetailLevel={subagentDetailLevel}
               subagentTree={subagentTree}
               collapsedSubagents={collapsedSubagents}
