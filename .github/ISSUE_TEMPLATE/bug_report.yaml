@@ -72,7 +72,7 @@ body:
         [Paste output here]
       render: shell
 
-  - type: input
+  - type: textarea
     id: additional-context
     attributes:
       label: Additional context
