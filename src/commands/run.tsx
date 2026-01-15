@@ -72,6 +72,18 @@ export function parseRunArgs(args: string[]): ExtendedRuntimeOptions {
     const arg = args[i];
     const nextArg = args[i + 1];
 
+    if (arg.startsWith('--sandbox=')) {
+      const mode = arg.split('=')[1];
+      if (mode === 'bwrap' || mode === 'docker') {
+        options.sandbox = {
+          ...options.sandbox,
+          enabled: true,
+          mode,
+        };
+      }
+      continue;
+    }
+
     switch (arg) {
       case '--epic':
         if (nextArg && !nextArg.startsWith('-')) {
@@ -152,6 +164,30 @@ export function parseRunArgs(args: string[]): ExtendedRuntimeOptions {
         options.noSetup = true;
         break;
 
+      case '--sandbox':
+        options.sandbox = {
+          ...options.sandbox,
+          enabled: true,
+          mode: 'auto',
+        };
+        break;
+
+      case '--no-sandbox':
+        options.sandbox = {
+          ...options.sandbox,
+          enabled: false,
+          mode: 'off',
+        };
+        break;
+
+      case '--no-network':
+        options.sandbox = {
+          ...options.sandbox,
+          enabled: true,
+          network: false,
+        };
+        break;
+
       case '--prompt':
         if (nextArg && !nextArg.startsWith('-')) {
           options.promptPath = nextArg;
@@ -215,6 +251,11 @@ Options:
   --no-setup          Skip interactive setup even if no config exists
   --notify            Force enable desktop notifications
   --no-notify         Force disable desktop notifications
+  --sandbox           Enable sandboxing (auto mode)
+  --sandbox=bwrap     Force Bubblewrap sandboxing
+  --sandbox=docker    Force Docker sandboxing
+  --no-sandbox        Disable sandboxing
+  --no-network        Disable network access in sandbox
 
 Log Output Format (--no-tui mode):
   [timestamp] [level] [component] message
