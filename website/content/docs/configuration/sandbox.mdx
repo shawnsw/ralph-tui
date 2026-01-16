@@ -1,6 +1,6 @@
 ---
 title: Sandbox
-description: Configure sandboxed agent execution with Bubblewrap or Docker.
+description: Configure sandboxed agent execution with Bubblewrap (Linux) or sandbox-exec (macOS).
 ---
 
 ## Sandbox Overview
@@ -26,9 +26,13 @@ Sandboxing is opt-in and controlled through configuration or CLI flags. Auto mod
 
 Sandbox mode uses different backends depending on platform:
 
-- **Linux**: Bubblewrap (`bwrap`) is preferred when installed.
-- **macOS/Windows**: Docker is required for sandboxing.
-- **All platforms**: If the required backend is missing, auto mode falls back to `off`.
+| Platform | Backend | Availability |
+|----------|---------|--------------|
+| **Linux** | Bubblewrap (`bwrap`) | Install via package manager |
+| **macOS** | `sandbox-exec` | Built-in (no installation needed) |
+| **Windows** | Not supported natively | Use WSL2 with Bubblewrap |
+
+If the required backend is missing or unavailable, auto mode falls back to `off`.
 
 ## Install Bubblewrap (Linux)
 
@@ -38,15 +42,72 @@ Install Bubblewrap with your package manager. On Debian/Ubuntu:
 sudo apt install bubblewrap
 ```
 
+On Fedora:
+
+```bash
+sudo dnf install bubblewrap
+```
+
+On Arch Linux:
+
+```bash
+sudo pacman -S bubblewrap
+```
+
+## macOS sandbox-exec
+
+On macOS, Ralph TUI uses the native `sandbox-exec` command with dynamically generated Seatbelt profiles. This provides similar isolation to Bubblewrap on Linux.
+
+### How It Works
+
+- Ralph generates a Seatbelt profile based on your configuration
+- The profile denies access by default, then allowlists specific paths
+- System directories (`/usr`, `/bin`, `/Applications`, etc.) are read-only
+- Your project directory is read-write
+- Agent auth paths (e.g., `~/.claude`) are mounted read-only
+
+### Deprecation Notice
+
+Apple has deprecated `sandbox-exec`, but it continues to work and is still used by many tools including Homebrew. You may see a deprecation warning in stderr - this is expected and does not affect functionality.
+
+## Sandboxing on Windows
+
+Native Windows sandboxing is not currently supported. Windows users who want sandboxing should use WSL2 (Windows Subsystem for Linux).
+
+### WSL2 Setup for Sandboxing
+
+1. **Install WSL2** (if not already installed):
+   ```powershell
+   wsl --install
+   ```
+
+2. **Install ralph-tui inside WSL**:
+   ```bash
+   # Inside your WSL distribution
+   curl -fsSL https://get.ralph-tui.dev | bash
+   ```
+
+3. **Install Bubblewrap**:
+   ```bash
+   sudo apt install bubblewrap
+   ```
+
+4. **Run with sandbox enabled**:
+   ```bash
+   ralph-tui run --sandbox
+   ```
+
+WSL2 provides a full Linux environment where Bubblewrap works natively.
+
 ## Sandbox Modes
 
 Sandbox mode is selected by the `sandbox.mode` setting or the CLI flag:
 
 | Mode | Behavior |
 |------|----------|
-| `auto` | Use Bubblewrap on Linux if available, otherwise Docker, otherwise `off` |
+| `auto` | Use Bubblewrap on Linux, sandbox-exec on macOS, otherwise `off` |
 | `bwrap` | Force Bubblewrap (Linux only) |
-| `docker` | Force Docker sandboxing |
+| `sandbox-exec` | Force sandbox-exec (macOS only) |
 | `off` | Disable sandboxing |
 
 ## Configuration Options
@@ -60,17 +121,15 @@ mode = "auto"
 network = true
 allowPaths = ["/path/to/allow"]
 readOnlyPaths = ["/path/to/read-only"]
-image = "ubuntu:22.04"
 ```
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `sandbox.enabled` | boolean | `false` | Enable sandboxing for agent execution |
-| `sandbox.mode` | string | `"auto"` | Sandbox backend (`auto`, `bwrap`, `docker`, `off`) |
+| `sandbox.mode` | string | `"auto"` | Sandbox backend (`auto`, `bwrap`, `sandbox-exec`, `off`) |
 | `sandbox.network` | boolean | `true` | Allow network access inside sandbox |
 | `sandbox.allowPaths` | string[] | `[]` | Additional writable paths (absolute or relative to project root) |
 | `sandbox.readOnlyPaths` | string[] | `[]` | Additional read-only paths (absolute or relative to project root) |
-| `sandbox.image` | string | `"ubuntu:22.04"` | Docker image for sandboxed runs |
 
 ## CLI Flags
 
@@ -79,8 +138,8 @@ CLI flags override config file settings:
 | Flag | Description |
 |------|-------------|
 | `--sandbox` | Enable sandboxing in auto mode |
-| `--sandbox=bwrap` | Force Bubblewrap sandboxing |
-| `--sandbox=docker` | Force Docker sandboxing |
+| `--sandbox=bwrap` | Force Bubblewrap sandboxing (Linux) |
+| `--sandbox=sandbox-exec` | Force sandbox-exec (macOS) |
 | `--no-sandbox` | Disable sandboxing |
 | `--no-network` | Disable network access in the sandbox |
 
@@ -111,17 +170,39 @@ If you're using the built-in cloud-based agents (for example `claude`, `opencode
 
 ## Examples
 
-Enable sandboxing without network access:
+### Enable sandboxing (auto mode)
+
+```bash
+ralph-tui run --sandbox
+```
+
+### Enable sandboxing without network access
 
 ```bash
 ralph-tui run --sandbox --no-network
 ```
 
-Force Docker sandboxing with a custom image:
+### Force Bubblewrap on Linux
 
 ```toml
 [sandbox]
 enabled = true
-mode = "docker"
-image = "ubuntu:22.04"
+mode = "bwrap"
+```
+
+### Force sandbox-exec on macOS
+
+```toml
+[sandbox]
+enabled = true
+mode = "sandbox-exec"
+```
+
+### Add custom paths
+
+```toml
+[sandbox]
+enabled = true
+allowPaths = ["~/shared-workspace"]
+readOnlyPaths = ["~/.config/my-tool"]
 ```
