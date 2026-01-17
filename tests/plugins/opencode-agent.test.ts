@@ -59,6 +59,11 @@ describe('OpenCodeAgentPlugin', () => {
       expect(await plugin.isReady()).toBe(true);
     });
 
+    test('accepts variant config', async () => {
+      await plugin.initialize({ variant: 'high' });
+      expect(await plugin.isReady()).toBe(true);
+    });
+
     test('accepts agent type config', async () => {
       await plugin.initialize({ agent: 'build' });
       expect(await plugin.isReady()).toBe(true);

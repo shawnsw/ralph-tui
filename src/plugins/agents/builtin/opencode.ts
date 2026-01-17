@@ -135,6 +135,9 @@ export class OpenCodeAgentPlugin extends BaseAgentPlugin {
   /** Model name (without provider prefix) */
   private model?: string;
 
+  /** Model variant (provider-specific reasoning effort: high, max, minimal) */
+  private variant?: string;
+
   /** Agent type to use (general, build, plan) */
   private agent: string = 'general';
 
@@ -151,6 +154,10 @@ export class OpenCodeAgentPlugin extends BaseAgentPlugin {
 
     if (typeof config.model === 'string' && config.model.length > 0) {
       this.model = config.model;
+    }
+
+    if (typeof config.variant === 'string' && config.variant.length > 0) {
+      this.variant = config.variant;
     }
 
     if (
@@ -326,6 +333,11 @@ export class OpenCodeAgentPlugin extends BaseAgentPlugin {
     const modelToUse = this.buildModelString();
     if (modelToUse) {
       args.push('--model', modelToUse);
+    }
+
+    // Add model variant if specified
+    if (this.variant) {
+      args.push('--variant', this.variant);
     }
 
     // Always use JSON format for streaming output parsing
