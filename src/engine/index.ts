@@ -76,7 +76,8 @@ async function buildPrompt(
   const codebasePatterns = await getCodebasePatternsForPrompt(config.cwd);
 
   // Get template from tracker plugin (new architecture: templates owned by plugins)
-  const trackerTemplate = tracker?.getTemplate();
+  // Use optional call syntax since not all tracker plugins implement getTemplate
+  const trackerTemplate = tracker?.getTemplate?.();
 
   // Get PRD context if the tracker supports it
   const prdContext = await tracker?.getPrdContext?.();

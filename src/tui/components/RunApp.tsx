@@ -757,28 +757,6 @@ export function RunApp({
     setFocusedSubagentId(id);
   }, []);
 
-  // Generate prompt preview for a given task ID
-  // Called from keyboard handler with the currently selected task's ID
-  const generatePromptPreview = useCallback(async (taskId: string | undefined) => {
-    if (!taskId) {
-      setPromptPreview('No task selected');
-      setTemplateSource(undefined);
-      return;
-    }
-
-    setPromptPreview('Generating prompt preview...');
-    setTemplateSource(undefined);
-
-    const result = await engine.generatePromptPreview(taskId);
-    if (result.success) {
-      setPromptPreview(result.prompt);
-      setTemplateSource(result.source);
-    } else {
-      setPromptPreview(`Error: ${result.error}`);
-      setTemplateSource(undefined);
-    }
-  }, [engine]);
-
   // Handle keyboard navigation
   const handleKeyboard = useCallback(
     (key: KeyEvent) => {
@@ -1029,21 +1007,17 @@ export function RunApp({
           // Cycle through details/output/prompt views in the right panel
           // Check if Shift+O (uppercase) - direct jump to prompt preview
           if (key.sequence === 'O') {
-            // Shift+O: Jump directly to prompt view and generate preview
+            // Shift+O: Jump directly to prompt view
+            // The effect handles generating the preview when detailsViewMode changes
             setDetailsViewMode('prompt');
-            void generatePromptPreview(displayedTasks[selectedIndex]?.id);
           } else {
             // lowercase 'o': Cycle through views
+            // The effect handles generating the preview when detailsViewMode changes to 'prompt'
             setDetailsViewMode((prev) => {
               const modes: DetailsViewMode[] = ['details', 'output', 'prompt'];
               const currentIdx = modes.indexOf(prev);
               const nextIdx = (currentIdx + 1) % modes.length;
-              const nextMode = modes[nextIdx]!;
-              // If cycling into prompt mode, generate the preview
-              if (nextMode === 'prompt') {
-                void generatePromptPreview(displayedTasks[selectedIndex]?.id);
-              }
-              return nextMode;
+              return modes[nextIdx]!;
             });
           }
           break;
@@ -1094,7 +1068,7 @@ export function RunApp({
           break;
       }
     },
-    [displayedTasks, selectedIndex, status, engine, onQuit, viewMode, iterations, iterationSelectedIndex, iterationHistoryLength, onIterationDrillDown, showInterruptDialog, onInterruptConfirm, onInterruptCancel, showHelp, showSettings, showQuitDialog, showEpicLoader, onStart, storedConfig, onSaveSettings, onLoadEpics, subagentDetailLevel, onSubagentPanelVisibilityChange, currentIteration, maxIterations, renderer, generatePromptPreview]
+    [displayedTasks, selectedIndex, status, engine, onQuit, viewMode, iterations, iterationSelectedIndex, iterationHistoryLength, onIterationDrillDown, showInterruptDialog, onInterruptConfirm, onInterruptCancel, showHelp, showSettings, showQuitDialog, showEpicLoader, onStart, storedConfig, onSaveSettings, onLoadEpics, subagentDetailLevel, onSubagentPanelVisibilityChange, currentIteration, maxIterations, renderer]
   );
 
   useKeyboard(handleKeyboard);
