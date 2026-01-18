@@ -193,4 +193,43 @@ describe('ExecutionEngine', () => {
       expect(result3.success).toBe(true);
     });
   });
+
+  describe('getSubagentDetails', () => {
+    test('returns undefined for non-existent subagent', () => {
+      const engine = new ExecutionEngine(createMockConfig());
+      const result = engine.getSubagentDetails('non-existent-id');
+      expect(result).toBeUndefined();
+    });
+
+    test('returns undefined when no subagents have been tracked', () => {
+      const engine = new ExecutionEngine(createMockConfig());
+      // No subagents tracked yet
+      const result = engine.getSubagentDetails('any-id');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getSubagentOutput', () => {
+    test('returns undefined for non-existent subagent', () => {
+      const engine = new ExecutionEngine(createMockConfig());
+      const result = engine.getSubagentOutput('non-existent-id');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getActiveSubagentId', () => {
+    test('returns undefined when no subagents are active', () => {
+      const engine = new ExecutionEngine(createMockConfig());
+      const result = engine.getActiveSubagentId();
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('getSubagentTree', () => {
+    test('returns empty array when no subagents', () => {
+      const engine = new ExecutionEngine(createMockConfig());
+      const result = engine.getSubagentTree();
+      expect(result).toEqual([]);
+    });
+  });
 });
