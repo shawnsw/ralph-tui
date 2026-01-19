@@ -1687,6 +1687,7 @@ export async function executeRunCommand(args: string[]): Promise<void> {
         agentName: config.agent.plugin,
         trackerName: config.tracker.plugin,
         currentModel: config.model,
+        autoCommit: storedConfig?.autoCommit,
       });
       const serverState = await remoteServer.start();
       const actualPort = serverState.port;
@@ -1703,18 +1704,22 @@ export async function executeRunCommand(args: string[]): Promise<void> {
         console.log(`  Port: ${actualPort}`);
       }
       if (isNew) {
+        // First time or rotated - show full token
         console.log('');
         console.log('  New server token generated:');
         console.log(`  ${token.value}`);
         console.log('');
         console.log('  ⚠️  Save this token securely - it won\'t be shown again!');
       } else {
-        // In listen mode, always show full token for easy copy/paste
-        console.log(`  Token: ${token.value}`);
+        // Subsequent runs - show preview only (security: avoid showing in logs/screen shares)
+        const tokenPreview = token.value.substring(0, 8) + '...';
+        console.log(`  Token: ${tokenPreview}`);
         const tokenInfo = await getServerTokenInfo();
         if (tokenInfo.daysRemaining !== undefined && tokenInfo.daysRemaining <= 7) {
           console.log(`  ⚠️  Token expires in ${tokenInfo.daysRemaining} day${tokenInfo.daysRemaining !== 1 ? 's' : ''}!`);
         }
+        console.log('');
+        console.log('  Hint: Use --rotate-token to generate a new token and see the full value.');
       }
       console.log('');
       console.log('  Connect from another machine:');

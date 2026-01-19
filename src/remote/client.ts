@@ -975,7 +975,9 @@ export class RemoteClient {
               this.reconnectAttempts = 0;
               this.startPingInterval();
             } else {
-              // Auth failed during reconnect - try again
+              // Auth failed during reconnect - clear connection token and retry with server token
+              // This handles the case where server restarted and our connection token is no longer valid
+              this.connectionToken = null;
               this.cleanupConnection();
               this.scheduleReconnect();
             }
@@ -1004,9 +1006,8 @@ export class RemoteClient {
       };
 
       this.ws.onerror = () => {
-        // Connection error during reconnect - schedule another attempt
-        this.cleanupConnection();
-        this.scheduleReconnect();
+        // Connection error during reconnect - onclose will also fire, let it handle scheduling
+        // Don't schedule here to avoid double-incrementing reconnectAttempts
       };
 
       this.ws.onclose = () => {
@@ -1015,7 +1016,7 @@ export class RemoteClient {
           this.cleanupConnection();
           this.scheduleReconnect();
         } else if (this._status === 'reconnecting') {
-          // Reconnect attempt failed - onclose will fire, schedule next attempt
+          // Reconnect attempt failed - schedule next attempt
           this.cleanupConnection();
           this.scheduleReconnect();
         }

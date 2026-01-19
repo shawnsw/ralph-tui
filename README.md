@@ -145,6 +145,7 @@ ralph-tui create-prd --output ./docs
 | `T` | Toggle subagent tree panel (Shift+T) |
 | `t` | Cycle subagent detail level |
 | `o` | Cycle right panel views |
+| `,` / `C` | Open settings (local) or view remote config (remote) |
 | `q` | Quit |
 | `?` | Show help |
 | `1-9` | Switch to tab 1-9 (remote instances) |

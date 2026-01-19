@@ -27,6 +27,8 @@ import { EpicLoaderOverlay } from './EpicLoaderOverlay.js';
 import type { EpicLoaderMode } from './EpicLoaderOverlay.js';
 import { SubagentTreePanel } from './SubagentTreePanel.js';
 import { TabBar } from './TabBar.js';
+import { RemoteConfigView } from './RemoteConfigView.js';
+import type { RemoteConfigData } from './RemoteConfigView.js';
 import { Toast, formatConnectionToast } from './Toast.js';
 import type { ConnectionToastMessage } from './Toast.js';
 import type { InstanceTab } from '../../remote/client.js';
@@ -348,6 +350,8 @@ export function RunApp({
   const renderer = useRenderer();
   // Copy feedback message state (auto-dismissed after 2s)
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  // Info feedback message state (auto-dismissed after 4s, for hints/tips)
+  const [infoFeedback, setInfoFeedback] = useState<string | null>(null);
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
     // Initialize with initial tasks if provided (for ready state)
     if (initialTasks && initialTasks.length > 0) {
@@ -393,6 +397,11 @@ export function RunApp({
   const [showHelp, setShowHelp] = useState(false);
   // Settings view state
   const [showSettings, setShowSettings] = useState(false);
+  // Remote config view state
+  const [showRemoteConfig, setShowRemoteConfig] = useState(false);
+  const [remoteConfigData, setRemoteConfigData] = useState<RemoteConfigData | null>(null);
+  const [remoteConfigLoading, setRemoteConfigLoading] = useState(false);
+  const [remoteConfigError, setRemoteConfigError] = useState<string | undefined>(undefined);
   // Quit confirmation dialog state
   const [showQuitDialog, setShowQuitDialog] = useState(false);
   // Show/hide closed tasks filter (default: show closed tasks)
@@ -481,6 +490,7 @@ export function RunApp({
   const [remoteAgentName, setRemoteAgentName] = useState<string | undefined>(undefined);
   const [remoteTrackerName, setRemoteTrackerName] = useState<string | undefined>(undefined);
   const [remoteModel, setRemoteModel] = useState<string | undefined>(undefined);
+  const [remoteAutoCommit, setRemoteAutoCommit] = useState<boolean | undefined>(undefined);
   // Cache for remote iteration output by task ID (similar to historicalOutputCache for local)
   const [remoteIterationCache, setRemoteIterationCache] = useState<Map<string, {
     iteration: number;
@@ -556,6 +566,10 @@ export function RunApp({
         }
         if (state.currentModel) {
           setRemoteModel(state.currentModel);
+        }
+        // Capture auto-commit setting for status display
+        if (state.autoCommit !== undefined) {
+          setRemoteAutoCommit(state.autoCommit);
         }
         // Set remote subagent tree if available
         if (state.subagentTree) {
@@ -1208,6 +1222,12 @@ export function RunApp({
         return;
       }
 
+      // When remote config view is showing, let it handle its own keyboard events
+      // Closing is handled by RemoteConfigView internally via onClose callback
+      if (showRemoteConfig) {
+        return;
+      }
+
       // When epic loader is showing, only Escape closes it
       // Epic loader handles its own keyboard events via useKeyboard
       if (showEpicLoader) {
@@ -1436,6 +1456,76 @@ export function RunApp({
           // Open settings view (comma key, like many text editors)
           if (storedConfig && onSaveSettings) {
             setShowSettings(true);
+          }
+          break;
+
+        case 'c':
+          // Shift+C: Show config viewer (read-only) for both local and remote
+          if (key.sequence === 'C') {
+            setShowRemoteConfig(true);
+            setRemoteConfigLoading(true);
+            setRemoteConfigError(undefined);
+            setRemoteConfigData(null);
+
+            if (isViewingRemote && instanceManager) {
+              // For remote tabs, fetch config from remote
+              instanceManager.checkRemoteConfig()
+                .then((data) => {
+                  if (data) {
+                    setRemoteConfigData(data);
+                  } else {
+                    setRemoteConfigError('Failed to fetch remote config');
+                  }
+                  setRemoteConfigLoading(false);
+                })
+                .catch((err) => {
+                  setRemoteConfigError(err instanceof Error ? err.message : 'Failed to fetch remote config');
+                  setRemoteConfigLoading(false);
+                });
+            } else {
+              // For local tab, read config files from disk
+              import('fs/promises').then(async (fs) => {
+                const { homedir } = await import('os');
+                const { join } = await import('path');
+                try {
+                  const globalPath = join(homedir(), '.config', 'ralph-tui', 'config.toml');
+                  const projectPath = join(cwd, '.ralph-tui', 'config.toml');
+
+                  let globalExists = false;
+                  let globalContent: string | undefined;
+                  let projectExists = false;
+                  let projectContent: string | undefined;
+
+                  try {
+                    globalContent = await fs.readFile(globalPath, 'utf-8');
+                    globalExists = true;
+                  } catch {
+                    // File doesn't exist
+                  }
+
+                  try {
+                    projectContent = await fs.readFile(projectPath, 'utf-8');
+                    projectExists = true;
+                  } catch {
+                    // File doesn't exist
+                  }
+
+                  setRemoteConfigData({
+                    globalExists,
+                    projectExists,
+                    globalPath: globalExists ? globalPath : undefined,
+                    projectPath: projectExists ? projectPath : undefined,
+                    globalContent,
+                    projectContent,
+                    remoteCwd: cwd,
+                  });
+                  setRemoteConfigLoading(false);
+                } catch (err) {
+                  setRemoteConfigError(err instanceof Error ? err.message : 'Failed to load config');
+                  setRemoteConfigLoading(false);
+                }
+              });
+            }
           }
           break;
 
@@ -2040,6 +2130,15 @@ export function RunApp({
     return () => clearTimeout(timer);
   }, [copyFeedback]);
 
+  // Auto-dismiss info feedback after 4 seconds (longer for reading)
+  useEffect(() => {
+    if (!infoFeedback) return;
+    const timer = setTimeout(() => {
+      setInfoFeedback(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [infoFeedback]);
+
   return (
     <box
       style={{
@@ -2108,7 +2207,7 @@ export function RunApp({
                 }
               : undefined
           }
-          autoCommit={storedConfig?.autoCommit}
+          autoCommit={isViewingRemote ? remoteAutoCommit : storedConfig?.autoCommit}
         />
       )}
 
@@ -2251,6 +2350,24 @@ export function RunApp({
         </box>
       )}
 
+      {/* Info feedback toast - positioned at bottom center */}
+      {infoFeedback && (
+        <box
+          style={{
+            position: 'absolute',
+            bottom: 2,
+            left: Math.max(2, Math.floor((width - infoFeedback.length - 6) / 2)),
+            paddingLeft: 1,
+            paddingRight: 1,
+            backgroundColor: colors.bg.tertiary,
+            border: true,
+            borderColor: colors.fg.muted,
+          }}
+        >
+          <text fg={colors.fg.secondary}>ℹ {infoFeedback}</text>
+        </box>
+      )}
+
       {/* Connection toast - shows reconnection events (US-5) */}
       {connectionToast && (() => {
         const formatted = formatConnectionToast(connectionToast);
@@ -2296,6 +2413,16 @@ export function RunApp({
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {/* Remote Config View */}
+      <RemoteConfigView
+        visible={showRemoteConfig}
+        remoteAlias={isViewingRemote ? (instanceTabs?.[selectedTabIndex]?.alias ?? instanceTabs?.[selectedTabIndex]?.label ?? 'remote') : 'Local'}
+        configData={remoteConfigData}
+        loading={remoteConfigLoading}
+        error={remoteConfigError}
+        onClose={() => setShowRemoteConfig(false)}
+      />
 
       {/* Epic Loader Overlay */}
       <EpicLoaderOverlay

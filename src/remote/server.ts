@@ -129,6 +129,9 @@ export interface RemoteServerOptions {
 
   /** Current model being used (provider/model format) */
   currentModel?: string;
+
+  /** Whether auto-commit is enabled */
+  autoCommit?: boolean;
 }
 
 /**
@@ -346,8 +349,16 @@ export class RemoteServer {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         // Check if error is "address in use" - try next port
+        // Bun's error has code property "EADDRINUSE" and message "Failed to start server. Is port X in use?"
         const errorMessage = lastError.message.toLowerCase();
-        if (errorMessage.includes('eaddrinuse') || errorMessage.includes('address already in use') || errorMessage.includes('address in use')) {
+        const errorCode = (error as { code?: string })?.code?.toLowerCase() ?? '';
+        if (
+          errorCode === 'eaddrinuse' ||
+          errorMessage.includes('eaddrinuse') ||
+          errorMessage.includes('address already in use') ||
+          errorMessage.includes('address in use') ||
+          errorMessage.includes('is port')
+        ) {
           continue;
         }
         // Different error - rethrow
@@ -639,6 +650,8 @@ export class RemoteServer {
       currentModel: this.options.currentModel,
       // Include subagent tree for TUI rendering
       subagentTree: this.options.engine.getSubagentTree(),
+      // Include config settings for TUI display
+      autoCommit: this.options.autoCommit,
     };
 
     const response = createMessage<StateResponseMessage>('state_response', {
@@ -1351,6 +1364,7 @@ export async function createRemoteServer(
 
   const serverOptions: RemoteServerOptions = {
     port: options.port ?? 7890,
+    maxPortRetries: options.maxPortRetries,
     hasToken,
     onStart: options.onStart,
     onStop: options.onStop,
@@ -1361,6 +1375,7 @@ export async function createRemoteServer(
     agentName: options.agentName,
     trackerName: options.trackerName,
     currentModel: options.currentModel,
+    autoCommit: options.autoCommit,
   };
 
   return new RemoteServer(serverOptions);

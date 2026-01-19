@@ -327,6 +327,8 @@ export interface RemoteEngineState {
   currentModel?: string;
   /** Subagent tree for current iteration (for TUI rendering) */
   subagentTree?: SubagentTreeNode[];
+  /** Whether auto-commit is enabled on the remote */
+  autoCommit?: boolean;
 }
 
 /**
