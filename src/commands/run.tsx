@@ -60,6 +60,7 @@ import {
   createRemoteServer,
   getOrCreateServerToken,
   getServerTokenInfo,
+  rotateServerToken,
   DEFAULT_LISTEN_OPTIONS,
   InstanceManager,
   type RemoteServer,
@@ -77,6 +78,8 @@ interface ExtendedRuntimeOptions extends RuntimeOptions {
   listen?: boolean;
   /** Port for remote listener (default: 7890) */
   listenPort?: number;
+  /** Rotate server token before starting listener */
+  rotateToken?: boolean;
 }
 
 /**
@@ -260,6 +263,10 @@ export function parseRunArgs(args: string[]): ExtendedRuntimeOptions {
           i++;
         }
         break;
+
+      case '--rotate-token':
+        options.rotateToken = true;
+        break;
     }
   }
 
@@ -303,6 +310,7 @@ Options:
   --no-network        Disable network access in sandbox
   --listen            Enable remote listener (implies --headless)
   --listen-port <n>   Port for remote listener (default: 7890)
+  --rotate-token      Rotate server token before starting listener
 
 Log Output Format (--no-tui mode):
   [timestamp] [level] [component] message
@@ -1646,12 +1654,30 @@ export async function executeRunCommand(args: string[]): Promise<void> {
     process.exit(1);
   }
 
+  // Warn if --rotate-token is used without --listen
+  if (options.rotateToken && !options.listen) {
+    console.warn('Warning: --rotate-token has no effect without --listen');
+  }
+
   // Start remote listener if --listen flag is set
   let remoteServer: RemoteServer | null = null;
   if (options.listen) {
     try {
       const listenPort = options.listenPort ?? DEFAULT_LISTEN_OPTIONS.port;
-      const { token, isNew } = await getOrCreateServerToken();
+
+      // Handle token rotation if requested
+      let token;
+      let isNew = false;
+      if (options.rotateToken) {
+        token = await rotateServerToken();
+        isNew = true; // Treat rotated token as new (show it once)
+        console.log('');
+        console.log('Token rotated successfully.');
+      } else {
+        const result = await getOrCreateServerToken();
+        token = result.token;
+        isNew = result.isNew;
+      }
 
       // Create and start the remote server
       remoteServer = await createRemoteServer({

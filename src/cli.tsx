@@ -21,7 +21,6 @@ import {
   executeDoctorCommand,
   executeInfoCommand,
   executeSkillsCommand,
-  executeListenCommand,
   executeRemoteCommand,
 } from './commands/index.js';
 
@@ -41,7 +40,6 @@ Commands:
   run [options]       Start Ralph execution
   resume [options]    Resume an interrupted session
   status [options]    Check session status (headless, for CI/scripts)
-  listen [options]    Start remote listener (WebSocket server)
   remote [subcommand] Manage remote server configurations
   logs [options]      View/manage iteration output logs
   setup [options]     Run interactive project setup (alias: init)
@@ -78,6 +76,9 @@ Run Options:
   --sandbox=sandbox-exec  Force sandbox-exec (macOS)
   --no-sandbox        Disable sandboxing
   --no-network        Disable network access in sandbox
+  --listen            Enable remote listener (WebSocket server)
+  --listen-port <n>   Port for remote listener (default: 7890)
+  --rotate-token      Rotate server token before starting listener
 
 Resume Options:
   --cwd <path>        Working directory
@@ -121,8 +122,8 @@ Examples:
   ralph-tui info -c                      # Copyable format for GitHub issues
   ralph-tui skills list                  # List bundled skills
   ralph-tui skills install --force       # Force reinstall all skills
-  ralph-tui listen                       # Start remote listener
-  ralph-tui listen --daemon              # Start as background daemon
+  ralph-tui run --listen                 # Run with remote listener enabled
+  ralph-tui run --listen --rotate-token  # Rotate token and start listener
   ralph-tui remote add prod server:7890 --token abc  # Add remote
   ralph-tui remote list                  # List remotes with status
   ralph-tui remote test prod             # Test connectivity
@@ -231,12 +232,6 @@ async function handleSubcommand(args: string[]): Promise<boolean> {
   // Skills command
   if (command === 'skills') {
     await executeSkillsCommand(args.slice(1));
-    return true;
-  }
-
-  // Listen command (remote listener)
-  if (command === 'listen') {
-    await executeListenCommand(args.slice(1));
     return true;
   }
 

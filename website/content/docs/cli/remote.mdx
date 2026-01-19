@@ -227,7 +227,7 @@ Tokens are stored in plain text in `remotes.toml`. Ensure appropriate file permi
 ```
 
 **Possible causes:**
-- Server is not running (`ralph-tui run --listen` or `ralph-tui listen`)
+- Server is not running (`ralph-tui run --listen`)
 - Firewall blocking port 7890
 - Incorrect hostname or port
 
@@ -244,7 +244,7 @@ Tokens are stored in plain text in `remotes.toml`. Ensure appropriate file permi
 - Token was rotated on the server
 - Token was copied incorrectly
 
-**Solution:** Get a fresh token from the server with `ralph-tui listen --rotate-token` and update the remote configuration.
+**Solution:** Get a fresh token from the server with `ralph-tui run --listen --rotate-token` and update the remote configuration.
 
 ### Config Push Failed
 

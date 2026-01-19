@@ -23,7 +23,6 @@ Use `ralph-tui help` to see all available commands, or `ralph-tui <command> --he
 | [`ralph-tui setup`](/docs/cli/setup) | Run interactive project setup |
 | [`ralph-tui create-prd`](/docs/cli/create-prd) | Create a new PRD interactively |
 | [`ralph-tui convert`](/docs/cli/convert) | Convert PRD markdown to JSON format |
-| [`ralph-tui listen`](/docs/cli/listen) | Start remote listener for remote control |
 | [`ralph-tui remote`](/docs/cli/remote) | Manage remote server connections |
 
 ## Additional Commands
@@ -92,7 +91,7 @@ The commands are typically used in this order:
 
 ### Remote Control
 
-- **[listen](/docs/cli/listen)** - Start a WebSocket server for remote control of this instance
+- **[run --listen](/docs/cli/run#remote-listener)** - Enable WebSocket server for remote control
 - **[remote](/docs/cli/remote)** - Manage connections to remote ralph-tui instances (add, remove, list, test, push-config)
 
 <Callout type="info">
@@ -144,7 +143,7 @@ ralph-tui
 - **Resilient**: Auto-reconnect with exponential backoff
 
 For detailed documentation, see:
-- **[listen](/docs/cli/listen)** - Server-side remote control setup
+- **[run --listen](/docs/cli/run#remote-listener)** - Server-side remote control setup
 - **[remote](/docs/cli/remote)** - Client-side connection management
 
 ## Next Steps

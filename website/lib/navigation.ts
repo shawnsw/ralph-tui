@@ -43,7 +43,6 @@ export const docsNavigation: NavItem[] = [
       { title: 'create-prd', href: '/docs/cli/create-prd' },
       { title: 'convert', href: '/docs/cli/convert' },
       { title: 'remote', href: '/docs/cli/remote' },
-      { title: 'listen', href: '/docs/cli/listen' },
       { title: 'doctor', href: '/docs/cli/doctor' },
       { title: 'info', href: '/docs/cli/info' },
     ],

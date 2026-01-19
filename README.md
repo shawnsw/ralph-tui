@@ -91,7 +91,7 @@ Ralph selects the highest-priority task, builds a prompt, executes your AI agent
 | `ralph-tui template show` | Display current prompt template |
 | `ralph-tui plugins agents` | List available agent plugins |
 | `ralph-tui plugins trackers` | List available tracker plugins |
-| `ralph-tui listen` | Start remote listener for remote control |
+| `ralph-tui run --listen` | Run with remote listener enabled |
 | `ralph-tui remote <cmd>` | Manage remote server connections |
 
 ### Common Options
@@ -241,13 +241,13 @@ ralph-tui run --listen --prd ./prd.json
 ralph-tui run --listen --listen-port 8080 --epic my-epic
 ```
 
-**Token management** (use standalone `listen` command):
+**Token management:**
 ```bash
 # Rotate authentication token (invalidates old token immediately)
-ralph-tui listen --rotate-token
+ralph-tui run --listen --rotate-token --prd ./prd.json
 
-# View token info
-ralph-tui listen --help
+# View remote listener options
+ralph-tui run --help
 ```
 
 ### Remote Configuration Commands
