@@ -353,6 +353,33 @@ export class BeadsRustTrackerPlugin extends BaseTrackerPlugin {
     return tasks;
   }
 
+  /**
+   * Get all available epics from the beads-rust tracker.
+   * Queries for tasks with type='epic' and filters to top-level open/in_progress only.
+   */
+  override async getEpics(): Promise<TrackerTask[]> {
+    const args = ['list', '--json', '--type', 'epic'];
+    if (this.labels.length > 0) {
+      args.push('--label', this.labels.join(','));
+    }
+    const { stdout, exitCode, stderr } = await execBr(args, this.workingDir);
+    if (exitCode !== 0) {
+      console.error('br list --type epic failed:', stderr);
+      return [];
+    }
+    let tasksJson: BrTaskJson[];
+    try {
+      tasksJson = JSON.parse(stdout) as BrTaskJson[];
+    } catch (err) {
+      console.error('Failed to parse br list --type epic output:', err);
+      return [];
+    }
+    const tasks = tasksJson.map(brTaskToTask);
+    return tasks.filter(
+      (t) => !t.parentId && (t.status === 'open' || t.status === 'in_progress')
+    );
+  }
+
   override async getTask(id: string): Promise<TrackerTask | undefined> {
     const { stdout, exitCode, stderr } = await execBr(
       ['show', id, '--json'],

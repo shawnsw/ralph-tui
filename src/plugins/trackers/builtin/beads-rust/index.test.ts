@@ -221,6 +221,116 @@ describe('BeadsRustTrackerPlugin', () => {
     });
   });
 
+  describe('getEpics', () => {
+    test('executes br list --json --type epic', async () => {
+      mockSpawnResponses = [
+        { exitCode: 0, stdout: 'br version 0.4.1\n' },
+        {
+          exitCode: 0,
+          stdout: JSON.stringify([
+            {
+              id: 'epic1',
+              title: 'Epic 1',
+              status: 'open',
+              priority: 1,
+              issue_type: 'epic',
+            },
+          ]),
+        },
+      ];
+
+      const plugin = new BeadsRustTrackerPlugin();
+      await plugin.initialize({ workingDir: '/test' });
+      mockSpawnArgs = [];
+
+      await plugin.getEpics();
+
+      expect(mockSpawnArgs.length).toBe(1);
+      expect(mockSpawnArgs[0]?.cmd).toBe('br');
+      expect(mockSpawnArgs[0]?.args).toEqual(['list', '--json', '--type', 'epic']);
+    });
+
+    test('filters to top-level open/in_progress epics only', async () => {
+      mockSpawnResponses = [
+        { exitCode: 0, stdout: 'br version 0.4.1\n' },
+        {
+          exitCode: 0,
+          stdout: JSON.stringify([
+            {
+              id: 'epic-open',
+              title: 'Epic Open',
+              status: 'open',
+              priority: 1,
+              issue_type: 'epic',
+            },
+            {
+              id: 'epic-wip',
+              title: 'Epic WIP',
+              status: 'in_progress',
+              priority: 1,
+              issue_type: 'epic',
+            },
+            {
+              id: 'epic-closed',
+              title: 'Epic Closed',
+              status: 'closed',
+              priority: 1,
+              issue_type: 'epic',
+            },
+            {
+              id: 'epic-open.1',
+              title: 'Child Epic',
+              status: 'open',
+              priority: 1,
+              issue_type: 'epic',
+            },
+          ]),
+        },
+      ];
+
+      const plugin = new BeadsRustTrackerPlugin();
+      await plugin.initialize({ workingDir: '/test' });
+
+      const epics = await plugin.getEpics();
+
+      expect(epics.map((e) => e.id)).toEqual(['epic-open', 'epic-wip']);
+    });
+
+    test('supports label filtering via plugin configuration', async () => {
+      mockSpawnResponses = [
+        { exitCode: 0, stdout: 'br version 0.4.1\n' },
+        {
+          exitCode: 0,
+          stdout: JSON.stringify([
+            {
+              id: 'epic1',
+              title: 'Epic 1',
+              status: 'open',
+              priority: 1,
+              issue_type: 'epic',
+              labels: ['a', 'b'],
+            },
+          ]),
+        },
+      ];
+
+      const plugin = new BeadsRustTrackerPlugin();
+      await plugin.initialize({ workingDir: '/test', labels: 'a,b' });
+      mockSpawnArgs = [];
+
+      await plugin.getEpics();
+
+      expect(mockSpawnArgs[0]?.args).toEqual([
+        'list',
+        '--json',
+        '--type',
+        'epic',
+        '--label',
+        'a,b',
+      ]);
+    });
+  });
+
   describe('getTask', () => {
     test('executes br show <id> --json', async () => {
       mockSpawnResponses = [
