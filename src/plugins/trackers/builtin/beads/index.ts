@@ -727,7 +727,12 @@ When finished, signal completion with:
         return null;
       }
 
-      const epic = JSON.parse(epicResult.stdout) as BeadJson;
+      // bd show --json returns an array with one element
+      const epics = JSON.parse(epicResult.stdout) as BeadJson[];
+      if (epics.length === 0) {
+        return null;
+      }
+      const epic = epics[0]!;
       const externalRef = epic.external_ref;
 
       if (!externalRef || !externalRef.startsWith('prd:')) {
