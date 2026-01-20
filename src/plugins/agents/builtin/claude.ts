@@ -589,9 +589,15 @@ export class ClaudeAgentPlugin extends BaseAgentPlugin {
       }
 
       if (result.status === 'failed') {
+        // Include exit code and stderr for debugging
+        const details = [
+          result.error,
+          result.exitCode !== undefined ? `exit code: ${result.exitCode}` : null,
+          result.stderr ? `stderr: ${result.stderr.slice(0, 200)}` : null,
+        ].filter(Boolean).join(', ');
         return {
           success: false,
-          error: result.error ?? 'Agent execution failed',
+          error: details || 'Agent execution failed',
           suggestion: this.getPreflightSuggestion(),
           durationMs,
         };
