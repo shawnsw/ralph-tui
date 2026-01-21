@@ -15,7 +15,7 @@ This plugin enables ralph-tui to use beads-rust as its task source. It provides:
 
 ## Prerequisites
 
-1. **beads-rust CLI (`br`)** - Install from [beads-rust releases](https://github.com/your-org/beads-rust)
+1. **beads-rust CLI (`br`)** - Install from [beads-rust releases](https://github.com/Dicklesworthstone/beads_rust)
 2. **Initialized beads directory** - Run `br init` in your project root
 
 ## Detection
@@ -52,15 +52,13 @@ Or create tasks manually:
 br create --type=epic \
   --title="Feature Name" \
   --description="Feature description" \
-  --external-ref="prd:./docs/feature-prd.md" \
-  --labels="ralph,feature"
+  --external-ref="prd:./docs/feature-prd.md"
 
 # Create child tasks
 br create --parent=<epic-id> \
   --title="US-001: Add database schema" \
   --description="Acceptance criteria here" \
-  --priority=1 \
-  --labels="ralph,task"
+  --priority=1
 
 # Add dependencies (task depends on blocker)
 br dep add <task-id> <blocker-id>
@@ -158,6 +156,6 @@ br dep cycles        # Check for circular dependencies
 
 ## Related
 
-- [beads-rust CLI documentation](https://github.com/your-org/beads-rust)
+- [beads-rust CLI documentation](https://github.com/Dicklesworthstone/beads_rust)
 - [ralph-tui documentation](../../../README.md)
 - [Creating beads from PRDs](../../../../skills/ralph-tui-create-beads-rust/SKILL.md)

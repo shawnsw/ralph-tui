@@ -5,7 +5,7 @@ description: Git-backed issue tracking with the high-performance br CLI (Rust re
 
 ## Beads-Rust Tracker
 
-The Beads-Rust tracker integrates with **[beads-rust](https://github.com/your-org/beads-rust)**, a high-performance Rust rewrite of the Beads issue tracker. It offers the same features as Beads with improved performance and SQLite-based storage.
+The Beads-Rust tracker integrates with **[beads-rust](https://github.com/Dicklesworthstone/beads_rust)**, a high-performance Rust rewrite of the Beads issue tracker. It offers the same features as Beads with improved performance and SQLite-based storage.
 
 <Callout type="tip">
 Beads-Rust (`br`) is a drop-in replacement for Beads (`bd`) with better performance. If you're starting fresh, consider using Beads-Rust.
@@ -13,7 +13,7 @@ Beads-Rust (`br`) is a drop-in replacement for Beads (`bd`) with better performa
 
 ## Prerequisites
 
-Install the Beads-Rust CLI (`br`) from the **[beads-rust releases](https://github.com/your-org/beads-rust/releases)**.
+Install the Beads-Rust CLI (`br`) from the **[beads-rust releases](https://github.com/Dicklesworthstone/beads_rust/releases)**.
 
 Initialize Beads in your project:
 
@@ -26,26 +26,22 @@ This creates a `.beads/` directory with your issue tracker (SQLite database + JS
 
 ## Basic Usage
 
-<Callout type="warning">
-**Important:** By default, Ralph TUI only shows issues with the `ralph` label. Either add this label to your issues, or change the label filter during setup (leave blank to see all issues).
-</Callout>
-
 <Steps>
   <Step title="Create an Epic">
-    Epics group related tasks. Add the `ralph` label so Ralph TUI can see it:
+    Epics group related tasks:
 
     ```bash
-    br create --title "User Authentication" --type epic --labels ralph
+    br create --title "User Authentication" --type epic
     # Created: ralph-tui-abc123
     ```
   </Step>
 
   <Step title="Add Tasks as Children of the Epic">
-    Tasks must be **children** of the epic (using `--parent`) to appear when running with `--epic`. Also add the `ralph` label:
+    Tasks must be **children** of the epic (using `--parent`) to appear when running with `--epic`:
 
     ```bash
-    br create --title "Login form" --type task --parent ralph-tui-abc123 --labels ralph
-    br create --title "Auth API" --type task --parent ralph-tui-abc123 --labels ralph
+    br create --title "Login form" --type task --parent ralph-tui-abc123
+    br create --title "Auth API" --type task --parent ralph-tui-abc123
     ```
 
     <Callout type="info">
@@ -91,7 +87,7 @@ tracker = "beads-rust"
 
 [trackerOptions]
 beadsDir = ".beads"
-labels = "ralph"
+# labels = "frontend,backend"  # Optional: filter by labels
 ```
 
 ### Options Reference
@@ -100,7 +96,7 @@ labels = "ralph"
 |--------|------|---------|-------------|
 | `beadsDir` | string | `.beads` | Path to .beads directory |
 | `epicId` | string | - | Epic ID to filter tasks (set via `--epic` flag) |
-| `labels` | string | `ralph` | Comma-separated label filter (issues must have these labels) |
+| `labels` | string | (empty) | Optional comma-separated label filter |
 | `workingDir` | string | `.` | Working directory for br commands |
 
 <Callout type="info">
@@ -118,8 +114,7 @@ Link a PRD to your epic using `--external-ref`:
 ```bash
 br create --type epic \
   --title "Authentication Feature" \
-  --external-ref "prd:./docs/auth-prd.md" \
-  --labels ralph
+  --external-ref "prd:./docs/auth-prd.md"
 ```
 
 When working on tasks under this epic, Ralph TUI will:
@@ -244,7 +239,7 @@ If you have both `bd` and `br` installed, use `--tracker beads` for bd or `--tra
 
 ### "br binary not available"
 
-Install the Beads-Rust CLI from the **[beads-rust releases](https://github.com/your-org/beads-rust/releases)**.
+Install the Beads-Rust CLI from the **[beads-rust releases](https://github.com/Dicklesworthstone/beads_rust/releases)**.
 
 ### "Beads directory not found"
 
@@ -257,10 +252,10 @@ br init
 ### "No tasks available"
 
 Check that:
-1. **Tasks have the `ralph` label**: `br list --label ralph`
-2. **Tasks are children of the epic**: `br list --parent <epic>`
-3. **Tasks are `open` status**: `br list --status open`
-4. **Dependencies are met**: `br show <task-id>`
+1. **Tasks are children of the epic**: `br list --parent <epic>`
+2. **Tasks are `open` status**: `br list --status open`
+3. **Dependencies are met**: `br show <task-id>`
+4. **Label filter matches** (if configured): `br list --label <your-label>`
 
 ### "Tasks not syncing"
 
