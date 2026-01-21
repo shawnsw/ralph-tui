@@ -166,14 +166,15 @@ export class GeminiAgentPlugin extends BaseAgentPlugin {
   }
 
   protected buildArgs(
-    prompt: string,
+    _prompt: string,
     _files?: AgentFileContext[],
     options?: AgentExecuteOptions
   ): string[] {
     const args: string[] = [];
 
-    // Non-interactive prompt mode
-    args.push('-p', prompt);
+    // Note: Prompt is passed via stdin (see getStdinInput) to avoid
+    // Windows shell interpretation issues with special characters.
+    // Gemini CLI reads from stdin when -p is not provided.
 
     // JSONL streaming output
     if (options?.subagentTracing) {
@@ -191,6 +192,19 @@ export class GeminiAgentPlugin extends BaseAgentPlugin {
     }
 
     return args;
+  }
+
+  /**
+   * Provide the prompt via stdin instead of command args.
+   * This avoids shell interpretation issues with special characters in prompts
+   * on Windows where shell: true is required for wrapper script execution.
+   */
+  protected override getStdinInput(
+    prompt: string,
+    _files?: AgentFileContext[],
+    _options?: AgentExecuteOptions
+  ): string {
+    return prompt;
   }
 
   override async validateSetup(answers: Record<string, unknown>): Promise<string | null> {

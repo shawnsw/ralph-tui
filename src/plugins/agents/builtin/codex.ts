@@ -180,7 +180,7 @@ export class CodexAgentPlugin extends BaseAgentPlugin {
   }
 
   protected buildArgs(
-    prompt: string,
+    _prompt: string,
     _files?: AgentFileContext[],
     options?: AgentExecuteOptions
   ): string[] {
@@ -207,10 +207,23 @@ export class CodexAgentPlugin extends BaseAgentPlugin {
     // Sandbox mode
     args.push('--sandbox', this.sandbox);
 
-    // Prompt goes last
-    args.push(prompt);
+    // Note: Prompt is passed via stdin (see getStdinInput) to avoid
+    // Windows shell interpretation issues with special characters.
 
     return args;
+  }
+
+  /**
+   * Provide the prompt via stdin instead of command args.
+   * This avoids shell interpretation issues with special characters in prompts
+   * on Windows where shell: true is required for wrapper script execution.
+   */
+  protected override getStdinInput(
+    prompt: string,
+    _files?: AgentFileContext[],
+    _options?: AgentExecuteOptions
+  ): string {
+    return prompt;
   }
 
   override async validateSetup(_answers: Record<string, unknown>): Promise<string | null> {
