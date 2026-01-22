@@ -7,9 +7,25 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { join } from 'node:path';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { parseCreatePrdArgs } from '../../src/commands/create-prd.js';
+import { parseCreatePrdArgs, printCreatePrdHelp } from '../../src/commands/create-prd.js';
 
 describe('create-prd command', () => {
+  describe('printCreatePrdHelp', () => {
+    test('prints help text to console', () => {
+      const originalLog = console.log;
+      const logs: string[] = [];
+      console.log = (msg: string) => logs.push(msg);
+      
+      printCreatePrdHelp();
+      
+      console.log = originalLog;
+      expect(logs.length).toBeGreaterThan(0);
+      expect(logs[0]).toContain('create-prd');
+      expect(logs[0]).toContain('--output');
+      expect(logs[0]).toContain('--agent');
+    });
+  });
+
   describe('parseCreatePrdArgs', () => {
     test('parses --output with path', () => {
       const result = parseCreatePrdArgs(['--output', './docs']);
@@ -29,6 +45,21 @@ describe('create-prd command', () => {
     test('parses -a shorthand', () => {
       const result = parseCreatePrdArgs(['-a', 'claude']);
       expect(result.agent).toBe('claude');
+    });
+
+    test('parses --stories with count', () => {
+      const result = parseCreatePrdArgs(['--stories', '10']);
+      expect(result.stories).toBe(10);
+    });
+
+    test('parses -n shorthand for stories', () => {
+      const result = parseCreatePrdArgs(['-n', '5']);
+      expect(result.stories).toBe(5);
+    });
+
+    test('ignores invalid stories value', () => {
+      const result = parseCreatePrdArgs(['--stories', 'invalid']);
+      expect(result.stories).toBeUndefined();
     });
 
     test('parses --timeout with value', () => {
@@ -201,6 +232,38 @@ describe('create-prd command', () => {
 
       const result = await loadBundledPrdSkill(mockAgent as any);
       expect(result).toContain('# Personal Skill');
+    });
+
+    test('falls back to repo skills when personal not found', async () => {
+      // Create only repo skill directory (no personal)
+      const repoSkillsDir = join(tempDir, 'project', '.kiro', 'skills', 'ralph-tui-prd');
+      await mkdir(repoSkillsDir, { recursive: true });
+      await writeFile(
+        join(repoSkillsDir, 'SKILL.md'),
+        '# Repo Skill Content'
+      );
+
+      // Change to the project directory so repo path resolves
+      const originalCwd = process.cwd();
+      process.chdir(join(tempDir, 'project'));
+
+      const { loadBundledPrdSkill } = await import('../../src/commands/create-prd.js');
+
+      const mockAgent = {
+        meta: {
+          id: 'kiro',
+          name: 'Kiro CLI',
+          skillsPaths: {
+            personal: join(tempDir, 'nonexistent', 'skills'),
+            repo: '.kiro/skills',
+          },
+        },
+      };
+
+      const result = await loadBundledPrdSkill(mockAgent as any);
+      process.chdir(originalCwd);
+      
+      expect(result).toContain('# Repo Skill Content');
     });
   });
 });
