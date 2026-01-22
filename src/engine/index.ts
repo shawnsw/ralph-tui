@@ -33,10 +33,14 @@ import { getAgentRegistry } from '../plugins/agents/registry.js';
 import { getTrackerRegistry } from '../plugins/trackers/registry.js';
 import { SubagentTraceParser } from '../plugins/agents/tracing/parser.js';
 import type { SubagentEvent } from '../plugins/agents/tracing/types.js';
-import { ClaudeAgentPlugin } from '../plugins/agents/builtin/claude.js';
+import type { ClaudeJsonlMessage } from '../plugins/agents/builtin/claude.js';
 import { createDroidStreamingJsonlParser, isDroidJsonlMessage, toClaudeJsonlMessages } from '../plugins/agents/droid/outputParser.js';
+import {
+  isOpenCodeTaskTool,
+  openCodeTaskToClaudeMessages,
+} from '../plugins/agents/opencode/outputParser.js';
 import { updateSessionIteration, updateSessionStatus, updateSessionMaxIterations } from '../session/index.js';
-import { saveIterationLog, buildSubagentTrace, createProgressEntry, appendProgress, getRecentProgressSummary } from '../logs/index.js';
+import { saveIterationLog, buildSubagentTrace, createProgressEntry, appendProgress, getRecentProgressSummary, getCodebasePatternsForPrompt } from '../logs/index.js';
 import type { AgentSwitchEntry } from '../logs/index.js';
 import { renderPrompt } from '../templates/index.js';
 
@@ -61,13 +65,36 @@ const PRIMARY_RECOVERY_TEST_PROMPT = 'Reply with just the word "ok".';
  * Build prompt for the agent based on task using the template system.
  * Falls back to a hardcoded default if template rendering fails.
  * Includes recent progress from previous iterations for context.
+ * Includes PRD context if the tracker provides it.
+ * Uses the tracker's getTemplate() method for plugin-owned templates.
  */
-async function buildPrompt(task: TrackerTask, config: RalphConfig): Promise<string> {
+async function buildPrompt(
+  task: TrackerTask,
+  config: RalphConfig,
+  tracker?: TrackerPlugin
+): Promise<string> {
   // Load recent progress for context (last 5 iterations)
   const recentProgress = await getRecentProgressSummary(config.cwd, 5);
 
-  // Use the template system
-  const result = renderPrompt(task, config, undefined, recentProgress);
+  // Load codebase patterns from progress.md (if any exist)
+  const codebasePatterns = await getCodebasePatternsForPrompt(config.cwd);
+
+  // Get template from tracker plugin (new architecture: templates owned by plugins)
+  // Use optional call syntax since not all tracker plugins implement getTemplate
+  const trackerTemplate = tracker?.getTemplate?.();
+
+  // Get PRD context if the tracker supports it
+  const prdContext = await tracker?.getPrdContext?.();
+
+  // Build extended template context with PRD data and patterns
+  const extendedContext = {
+    recentProgress,
+    codebasePatterns,
+    prd: prdContext ?? undefined,
+  };
+
+  // Use the template system (tracker template used if no custom/user override)
+  const result = renderPrompt(task, config, undefined, extendedContext, trackerTemplate);
 
   if (result.success && result.prompt) {
     return result.prompt;
@@ -280,6 +307,60 @@ export class ExecutionEngine {
   }
 
   /**
+   * Generate a preview of the prompt that would be sent to the agent for a given task.
+   * Useful for debugging and understanding what the agent will receive.
+   *
+   * @param taskId - The ID of the task to generate prompt for
+   * @returns Object with prompt content and template source, or error message
+   */
+  async generatePromptPreview(
+    taskId: string
+  ): Promise<{ success: true; prompt: string; source: string } | { success: false; error: string }> {
+    if (!this.tracker) {
+      return { success: false, error: 'No tracker configured' };
+    }
+
+    // Get the task (include completed tasks so we can review prompts after execution)
+    const tasks = await this.tracker.getTasks({ status: ['open', 'in_progress', 'completed'] });
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) {
+      return { success: false, error: `Task not found: ${taskId}` };
+    }
+
+    // Get tracker template (if tracker provides one)
+    const trackerTemplate = this.tracker.getTemplate?.();
+
+    // Get recent progress summary for context
+    const recentProgress = await getRecentProgressSummary(this.config.cwd, 5);
+
+    // Get codebase patterns from progress.md (if any exist)
+    const codebasePatterns = await getCodebasePatternsForPrompt(this.config.cwd);
+
+    // Get PRD context if the tracker supports it
+    const prdContext = await this.tracker.getPrdContext?.();
+
+    // Build extended template context with PRD data and patterns
+    const extendedContext = {
+      recentProgress,
+      codebasePatterns,
+      prd: prdContext ?? undefined,
+    };
+
+    // Generate the prompt
+    const result = renderPrompt(task, this.config, undefined, extendedContext, trackerTemplate);
+
+    if (!result.success || !result.prompt) {
+      return { success: false, error: result.error ?? 'Unknown error generating prompt' };
+    }
+
+    return {
+      success: true,
+      prompt: result.prompt,
+      source: result.source ?? 'unknown',
+    };
+  }
+
+  /**
    * Start the execution loop
    */
   async start(): Promise<void> {
@@ -308,6 +389,20 @@ export class ExecutionEngine {
       totalTasks: this.state.totalTasks, // Only counts open/in_progress
       tasks: initialTasks,
     });
+
+    // Warn if sandbox network is disabled but agent requires network
+    if (
+      this.config.sandbox?.enabled &&
+      this.config.sandbox?.network === false &&
+      this.agent!.getSandboxRequirements().requiresNetwork
+    ) {
+      this.emit({
+        type: 'engine:warning',
+        timestamp: new Date().toISOString(),
+        code: 'sandbox-network-conflict',
+        message: `Warning: Agent '${this.config.agent.plugin}' requires network access but --no-network is enabled. LLM API calls will fail.`,
+      });
+    }
 
     try {
       await this.runLoop();
@@ -431,25 +526,22 @@ export class ExecutionEngine {
   }
 
   /**
-   * Get the next available task, excluding skipped ones
+   * Get the next available task, excluding skipped ones.
+   * Delegates to the tracker's getNextTask() for proper dependency-aware ordering.
+   * See: https://github.com/subsy/ralph-tui/issues/97
    */
   private async getNextAvailableTask(): Promise<TrackerTask | null> {
-    const tasks = await this.tracker!.getTasks({ status: ['open', 'in_progress'] });
+    // Convert skipped tasks Set to array for the filter
+    const excludeIds = Array.from(this.skippedTasks);
 
-    for (const task of tasks) {
-      // Skip tasks that have been marked as skipped
-      if (this.skippedTasks.has(task.id)) {
-        continue;
-      }
+    // Delegate to tracker's getNextTask for dependency-aware ordering
+    // The tracker (e.g., beads) uses bd ready which properly handles dependencies
+    const task = await this.tracker!.getNextTask({
+      status: ['open', 'in_progress'],
+      excludeIds: excludeIds.length > 0 ? excludeIds : undefined,
+    });
 
-      // Check if task is ready (no unresolved dependencies)
-      const isReady = await this.tracker!.isTaskReady(task.id);
-      if (isReady) {
-        return task;
-      }
-    }
-
-    return null;
+    return task ?? null;
   }
 
   /**
@@ -710,8 +802,8 @@ export class ExecutionEngine {
       iteration,
     });
 
-    // Build prompt (includes recent progress context)
-    const prompt = await buildPrompt(task, this.config);
+    // Build prompt (includes recent progress context + tracker-owned template)
+    const prompt = await buildPrompt(task, this.config, this.tracker ?? undefined);
 
     // Build agent flags
     const flags: string[] = [];
@@ -719,22 +811,57 @@ export class ExecutionEngine {
       flags.push('--model', this.config.model);
     }
 
-    // Check if agent supports subagent tracing
+    // Check if agent declares subagent tracing support (used for agent-specific flags)
     const supportsTracing = this.agent!.meta.supportsSubagentTracing;
 
-    // Create streaming JSONL parser if tracing is enabled
-    const jsonlParser = supportsTracing
-      ? this.agent?.meta.id === 'droid'
-        ? createDroidStreamingJsonlParser()
-        : ClaudeAgentPlugin.createStreamingJsonlParser()
-      : null;
+    // For Droid agent, we need a JSONL parser since it uses a different output format.
+    // For Claude and OpenCode, we use the onJsonlMessage callback which gets pre-parsed messages.
+    const isDroidAgent = this.agent?.meta.id === 'droid';
+    const droidJsonlParser = isDroidAgent ? createDroidStreamingJsonlParser() : null;
 
     try {
       // Execute agent with subagent tracing if supported
       const handle = this.agent!.execute(prompt, [], {
         cwd: this.config.cwd,
         flags,
+        sandbox: this.config.sandbox,
         subagentTracing: supportsTracing,
+        // Callback for pre-parsed JSONL messages (used by Claude and OpenCode plugins)
+        // This receives raw JSON objects directly from the agent's parsed JSONL output.
+        onJsonlMessage: (message: Record<string, unknown>) => {
+          // Check if this is OpenCode format (has 'part' with 'tool' property)
+          const part = message.part as Record<string, unknown> | undefined;
+          if (message.type === 'tool_use' && part?.tool) {
+            // OpenCode format - convert using OpenCode parser
+            const openCodeMessage = {
+              source: 'opencode' as const,
+              type: message.type as string,
+              timestamp: message.timestamp as number | undefined,
+              sessionID: message.sessionID as string | undefined,
+              part: part as import('../plugins/agents/opencode/outputParser.js').OpenCodePart,
+              raw: message,
+            };
+            // Check if it's a Task tool and convert to Claude format
+            if (isOpenCodeTaskTool(openCodeMessage)) {
+              for (const claudeMessage of openCodeTaskToClaudeMessages(openCodeMessage)) {
+                this.subagentParser.processMessage(claudeMessage);
+              }
+            }
+            return;
+          }
+
+          // Claude format - convert raw JSON to ClaudeJsonlMessage format for SubagentParser
+          const claudeMessage: ClaudeJsonlMessage = {
+            type: message.type as string | undefined,
+            message: message.message as string | undefined,
+            tool: message.tool as { name?: string; input?: Record<string, unknown> } | undefined,
+            result: message.result,
+            cost: message.cost as { inputTokens?: number; outputTokens?: number; totalUSD?: number } | undefined,
+            sessionId: message.sessionId as string | undefined,
+            raw: message,
+          };
+          this.subagentParser.processMessage(claudeMessage);
+        },
         onStdout: (data) => {
           this.state.currentOutput += data;
           this.emit({
@@ -745,9 +872,10 @@ export class ExecutionEngine {
             iteration,
           });
 
-          // Parse JSONL output for subagent events if tracing is enabled
-          if (jsonlParser) {
-            const results = jsonlParser.push(data);
+          // For Droid agent, parse JSONL output for subagent events
+          // (Claude uses onJsonlMessage callback instead)
+          if (droidJsonlParser && isDroidAgent) {
+            const results = droidJsonlParser.push(data);
             for (const result of results) {
               if (result.success) {
                 if (isDroidJsonlMessage(result.message)) {
@@ -760,6 +888,7 @@ export class ExecutionEngine {
               }
             }
           }
+
         },
         onStderr: (data) => {
           this.state.currentStderr += data;
@@ -779,9 +908,9 @@ export class ExecutionEngine {
       const agentResult = await handle.promise;
       this.currentExecution = null;
 
-      // Flush any remaining buffered JSONL data
-      if (jsonlParser) {
-        const remaining = jsonlParser.flush();
+      // Flush any remaining buffered JSONL data for Droid agent
+      if (droidJsonlParser && isDroidAgent) {
+        const remaining = droidJsonlParser.flush();
         for (const result of remaining) {
           if (result.success) {
             if (isDroidJsonlMessage(result.message)) {
@@ -922,9 +1051,11 @@ export class ExecutionEngine {
 
       await saveIterationLog(this.config.cwd, result, agentResult.stdout, agentResult.stderr ?? this.state.currentStderr, {
         config: this.config,
+        sessionId: this.config.sessionId,
         subagentTrace,
         agentSwitches: this.currentIterationAgentSwitches.length > 0 ? [...this.currentIterationAgentSwitches] : undefined,
         completionSummary,
+        sandboxConfig: this.config.sandbox,
       });
 
       // Append progress entry for cross-iteration context
@@ -1279,6 +1410,58 @@ export class ExecutionEngine {
     }
 
     return depth;
+  }
+
+  /**
+   * Get output/result for a specific subagent by ID.
+   * For completed subagents, returns their result content.
+   * For running subagents, returns undefined (use currentOutput for live streaming).
+   *
+   * @param id - Subagent ID to get output for
+   * @returns Subagent result content, or undefined if not found or still running
+   */
+  getSubagentOutput(id: string): string | undefined {
+    const state = this.subagentParser.getSubagent(id);
+    if (!state) return undefined;
+    // Return result only for completed/errored subagents
+    if (state.status === 'completed' || state.status === 'error') {
+      return state.result;
+    }
+    return undefined;
+  }
+
+  /**
+   * Get detailed information about a subagent for display.
+   * Returns the prompt, result, and timing information.
+   *
+   * @param id - Subagent ID to get details for
+   * @returns Subagent details or undefined if not found
+   */
+  getSubagentDetails(id: string): {
+    prompt?: string;
+    result?: string;
+    spawnedAt: string;
+    endedAt?: string;
+    childIds: string[];
+  } | undefined {
+    const state = this.subagentParser.getSubagent(id);
+    if (!state) return undefined;
+    return {
+      prompt: state.prompt,
+      result: state.result,
+      spawnedAt: state.spawnedAt,
+      endedAt: state.endedAt,
+      childIds: state.childIds,
+    };
+  }
+
+  /**
+   * Get the currently active subagent ID (deepest in the hierarchy).
+   * Returns undefined if no subagent is currently active.
+   */
+  getActiveSubagentId(): string | undefined {
+    const stack = this.subagentParser.getActiveStack();
+    return stack.length > 0 ? stack[0] : undefined;
   }
 
   /**

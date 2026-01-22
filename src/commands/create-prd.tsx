@@ -96,7 +96,7 @@ Options:
   --cwd, -C <path>       Working directory (default: current directory)
   --output, -o <dir>     Output directory for PRD files (default: ./tasks)
   --agent, -a <name>     Agent plugin to use (default: from config)
-  --timeout, -t <ms>     Timeout for AI agent calls (default: 180000)
+  --timeout, -t <ms>     Timeout for AI agent calls in ms (default: 0 = no timeout)
   --prd-skill <name>     PRD skill folder inside skills_dir
   --force, -f            Overwrite existing files without prompting
   --help, -h             Show this help message
@@ -202,6 +202,8 @@ async function getAgent(agentName?: string): Promise<AgentPlugin | null> {
       name: targetAgent,
       plugin: targetAgent,
       options: storedConfig.agentOptions || {},
+      command: storedConfig.command,
+      envExclude: storedConfig.envExclude,
     };
 
     // Get agent instance
@@ -241,9 +243,33 @@ async function runChatMode(parsedArgs: CreatePrdArgs): Promise<PrdCreationResult
 
   const cwd = parsedArgs.cwd || process.cwd();
   const outputDir = parsedArgs.output || 'tasks';
-  const timeout = parsedArgs.timeout == undefined ? 180000 : parsedArgs.timeout;
+  const timeout = parsedArgs.timeout ?? 0;
 
   console.log(`Using agent: ${agent.meta.name}`);
+
+  // Run preflight check to verify agent can respond before starting conversation
+  console.log('Verifying agent configuration...');
+  const preflightResult = await agent.preflight({ timeout: 30000 });
+
+  if (!preflightResult.success) {
+    console.error('');
+    console.error('❌ Agent preflight check failed');
+    if (preflightResult.error) {
+      console.error(`   ${preflightResult.error}`);
+    }
+    if (preflightResult.suggestion) {
+      console.error('');
+      console.error('Suggestions:');
+      for (const line of preflightResult.suggestion.split('\n')) {
+        console.error(`  ${line}`);
+      }
+    }
+    console.error('');
+    console.error('Run "ralph-tui doctor" to diagnose agent issues.');
+    process.exit(1);
+  }
+
+  console.log('✓ Agent is ready');
   console.log('');
 
   // Create renderer and render the chat app

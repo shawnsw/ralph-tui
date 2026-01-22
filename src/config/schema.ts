@@ -15,6 +15,8 @@ export const SubagentDetailLevelSchema = z.enum(['off', 'minimal', 'moderate', '
  */
 export const ErrorHandlingStrategySchema = z.enum(['retry', 'skip', 'abort']);
 
+export const SandboxModeSchema = z.enum(['auto', 'bwrap', 'sandbox-exec', 'off']);
+
 /**
  * Error handling configuration schema
  */
@@ -38,6 +40,14 @@ export const RateLimitHandlingConfigSchema = z.object({
   maxRetries: z.number().int().min(0).max(10).optional(),
   baseBackoffMs: z.number().int().min(0).max(300000).optional(),
   recoverPrimaryBetweenIterations: z.boolean().optional(),
+});
+
+export const SandboxConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: SandboxModeSchema.optional(),
+  network: z.boolean().optional(),
+  allowPaths: z.array(z.string()).optional(),
+  readOnlyPaths: z.array(z.string()).optional(),
 });
 
 /**
@@ -68,6 +78,7 @@ export const AgentPluginConfigSchema = z.object({
   options: AgentOptionsSchema.optional().default({}),
   fallbackAgents: z.array(z.string().min(1)).optional(),
   rateLimitHandling: RateLimitHandlingConfigSchema.optional(),
+  envExclude: z.array(z.string().min(1)).optional(),
 });
 
 /**
@@ -92,6 +103,9 @@ export const TrackerPluginConfigSchema = z.object({
  */
 export const StoredConfigSchema = z
   .object({
+    // Config version for migrations (e.g., "2.0")
+    configVersion: z.string().optional(),
+
     // Default selections
     defaultAgent: z.string().optional(),
     defaultTracker: z.string().optional(),
@@ -109,6 +123,27 @@ export const StoredConfigSchema = z
     // Agent-specific options (shorthand for common settings)
     agent: z.string().optional(),
     agentCommand: z.string().optional(),
+    /**
+     * Custom command/executable path for the agent.
+     *
+     * Use this to route agent requests through wrapper tools like Claude Code Router (CCR)
+     * or to specify a custom binary location.
+     *
+     * Precedence (highest to lowest):
+     * 1. Agent-specific: [[agents]] command field
+     * 2. Top-level: this field
+     * 3. Plugin default: e.g., "claude" for Claude plugin
+     *
+     * @example "ccr code" - Route through Claude Code Router
+     * @example "/opt/bin/my-claude" - Absolute path to custom binary
+     */
+    command: z
+      .string()
+      .refine(
+        (cmd) => !/[;&|`$()]/.test(cmd),
+        'Command cannot contain shell metacharacters (;&|`$()). Use a wrapper script instead.'
+      )
+      .optional(),
     agentOptions: AgentOptionsSchema.optional(),
 
     // Tracker-specific options (shorthand for common settings)
@@ -118,11 +153,16 @@ export const StoredConfigSchema = z
     // Error handling
     errorHandling: ErrorHandlingConfigSchema.optional(),
 
+    sandbox: SandboxConfigSchema.optional(),
+
     // Fallback agents (shorthand for default agent)
     fallbackAgents: z.array(z.string().min(1)).optional(),
 
     // Rate limit handling (shorthand for default agent)
     rateLimitHandling: RateLimitHandlingConfigSchema.optional(),
+
+    // Environment variable exclusion (shorthand for default agent)
+    envExclude: z.array(z.string().min(1)).optional(),
 
     // Custom prompt template path
     prompt_template: z.string().optional(),

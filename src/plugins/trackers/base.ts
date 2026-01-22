@@ -186,6 +186,60 @@ export abstract class BaseTrackerPlugin implements TrackerPlugin {
   }
 
   /**
+   * Get the prompt template for this tracker.
+   * Default implementation provides a minimal template.
+   * Subclasses should override with their specific template.
+   */
+  getTemplate(): string {
+    return `## Task
+**ID**: {{taskId}}
+**Title**: {{taskTitle}}
+
+{{#if prdContent}}
+## PRD Context
+<details>
+<summary>Full PRD Document</summary>
+
+{{prdContent}}
+
+</details>
+{{/if}}
+
+{{#if codebasePatterns}}
+## Codebase Patterns (Study These First)
+{{codebasePatterns}}
+{{/if}}
+
+{{#if taskDescription}}
+## Description
+{{taskDescription}}
+{{/if}}
+
+{{#if acceptanceCriteria}}
+## Acceptance Criteria
+{{acceptanceCriteria}}
+{{/if}}
+
+{{#if dependsOn}}
+**Dependencies**: {{dependsOn}}
+{{/if}}
+
+{{#if recentProgress}}
+## Recent Progress
+{{recentProgress}}
+{{/if}}
+
+## Instructions
+Complete the task described above.
+
+**IMPORTANT**: If the work is already complete, verify it works correctly and signal completion immediately.
+
+When finished, signal completion with:
+<promise>COMPLETE</promise>
+`;
+  }
+
+  /**
    * Helper: Filter tasks by the given criteria.
    * Useful for subclasses implementing getTasks.
    */
@@ -236,6 +290,12 @@ export abstract class BaseTrackerPlugin implements TrackerPlugin {
     if (filter.type) {
       const types = Array.isArray(filter.type) ? filter.type : [filter.type];
       result = result.filter((t) => t.type && types.includes(t.type));
+    }
+
+    // Exclude specific task IDs (used for skipped/failed tasks)
+    if (filter.excludeIds && filter.excludeIds.length > 0) {
+      const excludeSet = new Set(filter.excludeIds);
+      result = result.filter((t) => !excludeSet.has(t.id));
     }
 
     // Filter to ready tasks (no unresolved dependencies)

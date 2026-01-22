@@ -62,6 +62,24 @@ export interface NotificationsConfig {
   sound?: NotificationSoundMode;
 }
 
+export type SandboxMode = 'auto' | 'bwrap' | 'sandbox-exec' | 'off';
+
+export interface SandboxConfig {
+  enabled?: boolean;
+  mode?: SandboxMode;
+  network?: boolean;
+  allowPaths?: string[];
+  readOnlyPaths?: string[];
+}
+
+export const DEFAULT_SANDBOX_CONFIG: Required<
+  Pick<SandboxConfig, 'enabled' | 'mode' | 'network'>
+> = {
+  enabled: false,
+  mode: 'auto',
+  network: true,
+};
+
 /**
  * Runtime options that can be passed via CLI flags
  */
@@ -71,6 +89,9 @@ export interface RuntimeOptions {
 
   /** Override model for the agent */
   model?: string;
+
+  /** Override model variant for the agent (e.g., minimal, high, max for Gemini) */
+  variant?: string;
 
   /** Override tracker plugin */
   tracker?: string;
@@ -116,12 +137,17 @@ export interface RuntimeOptions {
 
   /** Override notifications enabled state (--notify or --no-notify CLI flags) */
   notify?: boolean;
+
+  sandbox?: SandboxConfig;
 }
 
 /**
  * Stored configuration (from YAML config file)
  */
 export interface StoredConfig {
+  /** Config version for migrations (e.g., "2.0") */
+  configVersion?: string;
+
   /** Default agent to use */
   defaultAgent?: string;
 
@@ -149,11 +175,29 @@ export interface StoredConfig {
   /** Error handling configuration */
   errorHandling?: Partial<ErrorHandlingConfig>;
 
+  sandbox?: SandboxConfig;
+
   /** Shorthand: agent plugin name */
   agent?: string;
 
   /** Legacy alias: agent command name */
   agentCommand?: string;
+
+  /**
+   * Custom command/executable path for the agent.
+   *
+   * Use this to route agent requests through wrapper tools like Claude Code Router (CCR)
+   * or to specify a custom binary location.
+   *
+   * Precedence (highest to lowest):
+   * 1. Agent-specific: [[agents]] command field
+   * 2. Top-level: this field
+   * 3. Plugin default: e.g., "claude" for Claude plugin
+   *
+   * @example "ccr code" - Route through Claude Code Router
+   * @example "/opt/bin/my-claude" - Absolute path to custom binary
+   */
+  command?: string;
 
   /** Shorthand: tracker plugin name */
   tracker?: string;
@@ -172,6 +216,13 @@ export interface StoredConfig {
 
   /** Shorthand: rate limit handling configuration for the default agent */
   rateLimitHandling?: RateLimitHandlingConfig;
+
+  /**
+   * Shorthand: environment variables to exclude for the default agent.
+   * Use this to prevent sensitive keys from being inherited by agent processes.
+   * Supports exact names (e.g., "ANTHROPIC_API_KEY") or glob patterns (e.g., "*_API_KEY").
+   */
+  envExclude?: string[];
 
   /** Whether to auto-commit after successful tasks */
   autoCommit?: boolean;
@@ -228,8 +279,13 @@ export interface RalphConfig {
   /** Error handling configuration */
   errorHandling: ErrorHandlingConfig;
 
+  sandbox?: SandboxConfig;
+
   /** Custom prompt template path (resolved) */
   promptTemplate?: string;
+
+  /** Session ID for log file naming and tracking */
+  sessionId?: string;
 }
 
 /**
@@ -267,4 +323,5 @@ export const DEFAULT_CONFIG: Omit<RalphConfig, 'agent' | 'tracker'> = {
   progressFile: '.ralph-tui/progress.md',
   showTui: true,
   errorHandling: DEFAULT_ERROR_HANDLING,
+  sandbox: DEFAULT_SANDBOX_CONFIG,
 };

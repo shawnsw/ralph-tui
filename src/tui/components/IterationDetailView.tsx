@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { colors, formatElapsedTime } from '../theme.js';
 import type { IterationResult, IterationStatus, EngineSubagentStatus } from '../../engine/types.js';
 import type { SubagentHierarchyNode, SubagentTraceStats } from '../../logs/types.js';
+import type { SandboxConfig, SandboxMode } from '../../config/types.js';
 
 /**
  * Event in the iteration timeline
@@ -20,6 +21,24 @@ interface TimelineEvent {
   type: 'started' | 'agent_running' | 'task_completed' | 'completed' | 'failed' | 'skipped' | 'interrupted';
   /** Human-readable description */
   description: string;
+}
+
+/**
+ * Historic execution context from persisted log metadata.
+ * Used when viewing completed iterations to show what was actually used
+ * during execution, rather than current settings.
+ */
+export interface HistoricExecutionContext {
+  /** Agent plugin used during execution */
+  agentPlugin?: string;
+  /** Model used during execution */
+  model?: string;
+  /** Sandbox mode used during execution */
+  sandboxMode?: string;
+  /** Resolved sandbox mode when configured mode was 'auto' */
+  resolvedSandboxMode?: string;
+  /** Whether network access was enabled in sandbox */
+  sandboxNetwork?: boolean;
 }
 
 /**
@@ -42,6 +61,12 @@ export interface IterationDetailViewProps {
   subagentStats?: SubagentTraceStats;
   /** Loading state for subagent trace data */
   subagentTraceLoading?: boolean;
+  /** Sandbox configuration (if sandboxing is enabled) - used for running iterations */
+  sandboxConfig?: SandboxConfig;
+  /** Resolved sandbox mode (when mode is 'auto', this shows what it resolved to) - used for running iterations */
+  resolvedSandboxMode?: Exclude<SandboxMode, 'auto'>;
+  /** Historic execution context from persisted logs - used for completed iterations */
+  historicContext?: HistoricExecutionContext;
 }
 
 /**
@@ -536,7 +561,7 @@ function SubagentTreeSection({
         {loading ? (
           <text fg={colors.fg.dim}>Loading subagent trace...</text>
         ) : !tree || tree.length === 0 ? (
-          <text fg={colors.fg.muted}>No subagents spawned</text>
+          <text fg={colors.fg.muted}>No subagents were spawned during this iteration</text>
         ) : (
           <>
             {/* Summary line */}
@@ -578,6 +603,9 @@ export function IterationDetailView({
   subagentTree,
   subagentStats,
   subagentTraceLoading,
+  sandboxConfig,
+  resolvedSandboxMode,
+  historicContext,
 }: IterationDetailViewProps): ReactNode {
   const statusColor = statusColors[iteration.status];
   const statusIndicator = statusIndicators[iteration.status];
@@ -623,6 +651,39 @@ export function IterationDetailView({
           <text fg={colors.accent.primary}>{iteration.task.id}</text>
           <text fg={colors.fg.secondary}> - {iteration.task.title}</text>
         </box>
+
+        {/* Dependencies section - shows blocking relationships */}
+        {((iteration.task.dependsOn && iteration.task.dependsOn.length > 0) ||
+          (iteration.task.blocks && iteration.task.blocks.length > 0)) && (
+          <box style={{ marginBottom: 2 }}>
+            <SectionHeader title="Dependencies" />
+            <box
+              style={{
+                padding: 1,
+                backgroundColor: colors.bg.secondary,
+                border: true,
+                borderColor: colors.border.muted,
+                flexDirection: 'column',
+              }}
+            >
+              {/* Tasks that block this one (this task depends on them) */}
+              {iteration.task.dependsOn && iteration.task.dependsOn.length > 0 && (
+                <box style={{ marginBottom: iteration.task.blocks && iteration.task.blocks.length > 0 ? 1 : 0 }}>
+                  <text fg={colors.status.warning}>Blocked by: </text>
+                  <text fg={colors.fg.secondary}>{iteration.task.dependsOn.join(' · ')}</text>
+                </box>
+              )}
+
+              {/* Tasks that this one blocks (they depend on this task) */}
+              {iteration.task.blocks && iteration.task.blocks.length > 0 && (
+                <box>
+                  <text fg={colors.accent.tertiary}>Blocks: </text>
+                  <text fg={colors.fg.secondary}>{iteration.task.blocks.join(' · ')}</text>
+                </box>
+              )}
+            </box>
+          </box>
+        )}
 
         {/* Metadata section */}
         <box style={{ marginBottom: 2 }}>
@@ -678,6 +739,110 @@ export function IterationDetailView({
             )}
           </box>
         </box>
+
+        {/* Execution Context section - shows agent and model used */}
+        {(historicContext?.agentPlugin || historicContext?.model) && (
+          <box style={{ marginBottom: 2 }}>
+            <SectionHeader title="Execution Context" />
+            <box
+              style={{
+                padding: 1,
+                backgroundColor: colors.bg.secondary,
+                border: true,
+                borderColor: colors.border.muted,
+              }}
+            >
+              {historicContext.agentPlugin && (
+                <MetadataRow
+                  label="Agent"
+                  value={historicContext.agentPlugin}
+                  valueColor={colors.accent.tertiary}
+                />
+              )}
+              {historicContext.model && (
+                <MetadataRow
+                  label="Model"
+                  value={historicContext.model}
+                  valueColor={colors.accent.primary}
+                />
+              )}
+            </box>
+          </box>
+        )}
+
+        {/* Sandbox configuration section - shows if sandboxing was enabled */}
+        {/* For completed iterations, use historic context; for running iterations, use current config */}
+        {(historicContext?.sandboxMode && historicContext.sandboxMode !== 'off') ? (
+          <box style={{ marginBottom: 2 }}>
+            <SectionHeader title="Sandbox Configuration" />
+            <box
+              style={{
+                padding: 1,
+                backgroundColor: colors.bg.secondary,
+                border: true,
+                borderColor: colors.status.info,
+              }}
+            >
+              <MetadataRow
+                label="Mode"
+                value={
+                  historicContext.sandboxMode === 'auto' && historicContext.resolvedSandboxMode
+                    ? `auto (${historicContext.resolvedSandboxMode})`
+                    : historicContext.sandboxMode
+                }
+                valueColor={colors.status.info}
+              />
+              {historicContext.sandboxNetwork !== undefined && (
+                <MetadataRow
+                  label="Network Access"
+                  value={historicContext.sandboxNetwork ? 'Enabled' : 'Disabled'}
+                  valueColor={historicContext.sandboxNetwork ? colors.status.success : colors.status.warning}
+                />
+              )}
+            </box>
+          </box>
+        ) : (sandboxConfig?.enabled && sandboxConfig.mode !== 'off' && !historicContext) && (
+          <box style={{ marginBottom: 2 }}>
+            <SectionHeader title="Sandbox Configuration" />
+            <box
+              style={{
+                padding: 1,
+                backgroundColor: colors.bg.secondary,
+                border: true,
+                borderColor: colors.status.info,
+              }}
+            >
+              <MetadataRow
+                label="Mode"
+                value={
+                  (sandboxConfig.mode ?? 'auto') === 'auto' && resolvedSandboxMode
+                    ? `auto (${resolvedSandboxMode})`
+                    : sandboxConfig.mode ?? 'auto'
+                }
+                valueColor={colors.status.info}
+              />
+              <MetadataRow
+                label="Network Access"
+                value={sandboxConfig.network === false ? 'Disabled' : 'Enabled'}
+                valueColor={sandboxConfig.network === false ? colors.status.warning : colors.status.success}
+              />
+              {sandboxConfig.allowPaths && sandboxConfig.allowPaths.length > 0 && (
+                <MetadataRow
+                  label="Writable Paths"
+                  value={sandboxConfig.allowPaths.join(', ')}
+                  valueColor={colors.fg.secondary}
+                />
+              )}
+              {sandboxConfig.readOnlyPaths && sandboxConfig.readOnlyPaths.length > 0 && (
+                <MetadataRow
+                  label="Read-Only Paths"
+                  value={sandboxConfig.readOnlyPaths.join(', ')}
+                  valueColor={colors.fg.secondary}
+                />
+              )}
+            </box>
+          </box>
+        )}
 
         {/* Timeline section */}
         <box style={{ marginBottom: 2 }}>

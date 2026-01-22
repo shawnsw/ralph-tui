@@ -74,13 +74,17 @@ import type {
   AgentPlugin,
   AgentPluginMeta,
   AgentDetectResult,
+  AgentPreflightResult,
   AgentFileContext,
   AgentExecuteOptions,
   AgentExecutionResult,
   AgentExecutionHandle,
   AgentSetupQuestion,
   AgentExecutionStatus,
+  AgentSandboxRequirements,
 } from './types.js';
+import { SandboxWrapper, detectSandboxMode } from '../../sandbox/index.js';
+import type { SandboxConfig } from '../../sandbox/types.js';
 
 /**
  * Internal representation of a running execution.
@@ -95,12 +99,53 @@ interface RunningExecution {
   resolve: (result: AgentExecutionResult) => void;
   reject: (error: Error) => void;
   timeoutId?: ReturnType<typeof setTimeout>;
+  options?: AgentExecuteOptions;
 }
 
 /**
  * Abstract base class for agent plugins.
  * Provides sensible defaults and utility methods for executing CLI-based agents.
  */
+/**
+ * Check if a string matches a glob pattern.
+ * Supports * (match any characters) and ? (match single character).
+ */
+function globMatch(pattern: string, str: string): boolean {
+  // Escape regex special characters except * and ?
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  // Convert glob wildcards to regex
+  const regex = new RegExp(
+    '^' + escaped.replace(/\*/g, '.*').replace(/\?/g, '.') + '$'
+  );
+  return regex.test(str);
+}
+
+/**
+ * Filter environment variables by excluding those matching patterns.
+ * @param env Environment variables object
+ * @param excludePatterns Patterns to exclude (exact names or glob patterns)
+ * @returns Filtered environment object
+ */
+function filterEnvByExclude(
+  env: NodeJS.ProcessEnv,
+  excludePatterns: string[]
+): NodeJS.ProcessEnv {
+  if (!excludePatterns || excludePatterns.length === 0) {
+    return env;
+  }
+
+  const filtered: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    const shouldExclude = excludePatterns.some((pattern) =>
+      globMatch(pattern, key)
+    );
+    if (!shouldExclude) {
+      filtered[key] = value;
+    }
+  }
+  return filtered;
+}
+
 export abstract class BaseAgentPlugin implements AgentPlugin {
   abstract readonly meta: AgentPluginMeta;
 
@@ -109,6 +154,7 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
   protected commandPath?: string;
   protected defaultFlags: string[] = [];
   protected defaultTimeout = 0; // 0 = no timeout
+  protected envExclude: string[] = []; // Environment variables to exclude
 
   /** Map of running executions by ID */
   private executions: Map<string, RunningExecution> = new Map();
@@ -136,6 +182,12 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
 
     if (typeof config.timeout === 'number' && config.timeout > 0) {
       this.defaultTimeout = config.timeout;
+    }
+
+    if (Array.isArray(config.envExclude)) {
+      this.envExclude = config.envExclude.filter(
+        (p): p is string => typeof p === 'string' && p.length > 0
+      );
     }
 
     this.ready = true;
@@ -209,6 +261,15 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
     });
   }
 
+  getSandboxRequirements(): AgentSandboxRequirements {
+    return {
+      authPaths: [],
+      binaryPaths: [],
+      runtimePaths: [],
+      requiresNetwork: false,
+    };
+  }
+
   /**
    * Build the command arguments for execution.
    * Subclasses should override to construct their specific CLI arguments.
@@ -255,9 +316,10 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
     const startedAt = new Date();
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    // Merge environment
+    // Merge environment, filtering out excluded variables
+    const baseEnv = filterEnvByExclude(process.env, this.envExclude);
     const env = {
-      ...process.env,
+      ...baseEnv,
       ...options?.env,
     };
 
@@ -272,116 +334,194 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
       rejectPromise = reject;
     });
 
-    // Spawn the process
-    // Note: On Windows, we need shell: true to execute wrapper scripts (.cmd, .bat, .ps1)
-    // On Unix, shell: false avoids shell interpretation of special characters in args
-    // The prompt will be passed via stdin if getStdinInput returns content
-    const isWindows = platform() === 'win32';
-    const proc = spawn(command, allArgs, {
-      cwd: options?.cwd ?? process.cwd(),
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: isWindows,
-    });
+    let pendingInterrupt = false;
 
-    // Write to stdin if subclass provides input (e.g., prompt content)
-    const stdinInput = this.getStdinInput(prompt, files, options);
-    if (stdinInput !== undefined && proc.stdin) {
-      proc.stdin.write(stdinInput);
-      proc.stdin.end();
-    } else if (proc.stdin) {
-      // Close stdin if no input to prevent hanging
-      proc.stdin.end();
-    }
+    const startProcess = (spawnCommand: string, spawnArgs: string[]): void => {
+      // Spawn the process
+      // Note: On Windows, we need shell: true to execute wrapper scripts (.cmd, .bat, .ps1)
+      // On Unix, shell: false avoids shell interpretation of special characters in args
+      // The prompt will be passed via stdin if getStdinInput returns content
+      const isWindows = platform() === 'win32';
+      const proc = spawn(spawnCommand, spawnArgs, {
+        cwd: options?.cwd ?? process.cwd(),
+        env,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        shell: isWindows,
+      });
 
-    // Create running execution entry
-    const execution: RunningExecution = {
-      executionId,
-      process: proc,
-      startedAt,
-      stdout: '',
-      stderr: '',
-      interrupted: false,
-      resolve: resolvePromise!,
-      reject: rejectPromise!,
+      // Write to stdin if subclass provides input (e.g., prompt content)
+      const stdinInput = this.getStdinInput(prompt, files, options);
+      if (stdinInput !== undefined && proc.stdin) {
+        proc.stdin.write(stdinInput);
+        proc.stdin.end();
+      } else if (proc.stdin) {
+        // Close stdin if no input to prevent hanging
+        proc.stdin.end();
+      }
+
+      // Create running execution entry
+      const execution: RunningExecution = {
+        executionId,
+        process: proc,
+        startedAt,
+        stdout: '',
+        stderr: '',
+        interrupted: false,
+        resolve: resolvePromise!,
+        reject: rejectPromise!,
+        options,
+      };
+
+      this.executions.set(executionId, execution);
+      this.currentExecutionId = executionId;
+
+      // Notify start callback
+      options?.onStart?.(executionId);
+
+      // Handle stdout
+      proc.stdout?.on('data', (data: Buffer) => {
+        const text = data.toString();
+        execution.stdout += text;
+        options?.onStdout?.(text);
+      });
+
+      // Handle stderr
+      proc.stderr?.on('data', (data: Buffer) => {
+        const text = data.toString();
+        execution.stderr += text;
+        options?.onStderr?.(text);
+      });
+
+      // Handle process error
+      proc.on('error', (error) => {
+        this.completeExecution(executionId, 'failed', undefined, error.message);
+      });
+
+      // Handle process exit
+      proc.on('close', (code, signal) => {
+        // Debug: log close event
+        if (process.env.RALPH_DEBUG) {
+          debugLog(`[DEBUG] Process close: code=${code}, signal=${signal}, execId=${executionId}`);
+        }
+
+        // Determine status
+        let status: AgentExecutionStatus;
+        if (execution.interrupted) {
+          status = 'interrupted';
+        } else if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+          status = execution.timeoutId ? 'timeout' : 'interrupted';
+        } else if (code === 0) {
+          status = 'completed';
+        } else {
+          status = 'failed';
+        }
+
+        this.completeExecution(executionId, status, code ?? undefined);
+      });
+
+      // Backup: also listen for 'exit' event in case 'close' doesn't fire
+      proc.on('exit', (code, signal) => {
+        if (process.env.RALPH_DEBUG) {
+          debugLog(`[DEBUG] Process exit: code=${code}, signal=${signal}, execId=${executionId}`);
+        }
+        // Note: We don't call completeExecution here to avoid double-completion
+        // 'close' should fire after 'exit' once stdio streams are closed
+      });
+
+      // Set up timeout if specified
+      if (timeout > 0) {
+        execution.timeoutId = setTimeout(() => {
+          if (this.executions.has(executionId)) {
+            proc.kill('SIGTERM');
+            // Give it 5 seconds to terminate gracefully
+            setTimeout(() => {
+              if (this.executions.has(executionId)) {
+                proc.kill('SIGKILL');
+              }
+            }, 5000);
+          }
+        }, timeout);
+      }
+
+      if (pendingInterrupt) {
+        this.interrupt(executionId);
+      }
     };
 
-    this.executions.set(executionId, execution);
-    this.currentExecutionId = executionId;
-
-    // Notify start callback
-    options?.onStart?.(executionId);
-
-    // Handle stdout
-    proc.stdout?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      execution.stdout += text;
-      options?.onStdout?.(text);
-    });
-
-    // Handle stderr
-    proc.stderr?.on('data', (data: Buffer) => {
-      const text = data.toString();
-      execution.stderr += text;
-      options?.onStderr?.(text);
-    });
-
-    // Handle process error
-    proc.on('error', (error) => {
-      this.completeExecution(executionId, 'failed', undefined, error.message);
-    });
-
-    // Handle process exit
-    proc.on('close', (code, signal) => {
-      // Debug: log close event
-      if (process.env.RALPH_DEBUG) {
-        debugLog(`[DEBUG] Process close: code=${code}, signal=${signal}, execId=${executionId}`);
+    const resolveSandboxConfig = async (): Promise<SandboxConfig | undefined> => {
+      const sandboxConfig = options?.sandbox;
+      if (!sandboxConfig?.enabled) {
+        return undefined;
       }
 
-      // Determine status
-      let status: AgentExecutionStatus;
-      if (execution.interrupted) {
-        status = 'interrupted';
-      } else if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-        status = execution.timeoutId ? 'timeout' : 'interrupted';
-      } else if (code === 0) {
-        status = 'completed';
-      } else {
-        status = 'failed';
-      }
+      const mode = sandboxConfig.mode ?? 'auto';
+      const resolvedMode = mode === 'auto' ? await detectSandboxMode() : mode;
+      return {
+        ...sandboxConfig,
+        mode: resolvedMode,
+      };
+    };
 
-      this.completeExecution(executionId, status, code ?? undefined);
-    });
+    void resolveSandboxConfig()
+      .then((sandboxConfig) => {
+        let spawnCommand = command;
+        let spawnArgs = allArgs;
 
-    // Backup: also listen for 'exit' event in case 'close' doesn't fire
-    proc.on('exit', (code, signal) => {
-      if (process.env.RALPH_DEBUG) {
-        debugLog(`[DEBUG] Process exit: code=${code}, signal=${signal}, execId=${executionId}`);
-      }
-      // Note: We don't call completeExecution here to avoid double-completion
-      // 'close' should fire after 'exit' once stdio streams are closed
-    });
-
-    // Set up timeout if specified
-    if (timeout > 0) {
-      execution.timeoutId = setTimeout(() => {
-        if (this.executions.has(executionId)) {
-          proc.kill('SIGTERM');
-          // Give it 5 seconds to terminate gracefully
-          setTimeout(() => {
-            if (this.executions.has(executionId)) {
-              proc.kill('SIGKILL');
-            }
-          }, 5000);
+        if (sandboxConfig) {
+          const wrapper = new SandboxWrapper(
+            sandboxConfig,
+            this.getSandboxRequirements()
+          );
+          const wrapped = wrapper.wrapCommand(command, allArgs, {
+            cwd: options?.cwd,
+          });
+          spawnCommand = wrapped.command;
+          spawnArgs = wrapped.args;
         }
-      }, timeout);
-    }
+
+        startProcess(spawnCommand, spawnArgs);
+      })
+      .catch((error: Error) => {
+        const endedAt = new Date();
+        const result = {
+          executionId,
+          status: 'failed' as const,
+          exitCode: undefined,
+          stdout: '',
+          stderr: error.message,
+          durationMs: endedAt.getTime() - startedAt.getTime(),
+          error: error.message,
+          interrupted: false,
+          startedAt: startedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+        };
+
+        // Call onEnd lifecycle hook before resolving (same pattern as completeExecution)
+        if (options?.onEnd) {
+          try {
+            options.onEnd(result);
+          } catch (err) {
+            if (process.env.RALPH_DEBUG) {
+              debugLog(`[DEBUG] onEnd hook threw error: ${err instanceof Error ? err.message : String(err)}`);
+            }
+            // Swallow error - always proceed to resolve
+          }
+        }
+
+        resolvePromise!(result);
+      });
 
     // Return the handle
     return {
       executionId,
       promise,
-      interrupt: () => this.interrupt(executionId),
+      interrupt: () => {
+        if (this.executions.has(executionId)) {
+          return this.interrupt(executionId);
+        }
+        pendingInterrupt = true;
+        return true;
+      },
       isRunning: () => this.executions.has(executionId),
     };
   }
@@ -432,6 +572,20 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
     this.executions.delete(executionId);
     if (this.currentExecutionId === executionId) {
       this.currentExecutionId = undefined;
+    }
+
+    // Call onEnd lifecycle hook before resolving
+    // This allows plugins to flush buffers or perform cleanup
+    // Wrap in try/catch so exceptions don't prevent resolution
+    if (execution.options?.onEnd) {
+      try {
+        execution.options.onEnd(result);
+      } catch (err) {
+        if (process.env.RALPH_DEBUG) {
+          debugLog(`[DEBUG] onEnd hook threw error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        // Swallow error - always proceed to resolve
+      }
     }
 
     // Resolve the promise
@@ -541,6 +695,96 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
    */
   validateModel(_model: string): string | null {
     return null;
+  }
+
+  /**
+   * Run a preflight check to verify the agent is fully operational.
+   * Default implementation runs a minimal test prompt and checks for any response.
+   * Subclasses can override for agent-specific preflight logic.
+   *
+   * @param options Optional configuration for the preflight check
+   * @returns Preflight result with success status and any error/suggestion
+   */
+  async preflight(
+    options?: { timeout?: number }
+  ): Promise<AgentPreflightResult> {
+    const startTime = Date.now();
+    const timeout = options?.timeout ?? 15000; // Default 15 second timeout
+
+    try {
+      // First ensure detect passes
+      const detection = await this.detect();
+      if (!detection.available) {
+        return {
+          success: false,
+          error: detection.error ?? 'Agent not available',
+          suggestion: `Make sure ${this.meta.name} is installed and accessible`,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      // Run a minimal test prompt
+      const testPrompt = 'Respond with exactly: PREFLIGHT_OK';
+      let output = '';
+
+      const handle = this.execute(testPrompt, [], {
+        timeout,
+        onStdout: (data: string) => {
+          output += data;
+        },
+      });
+
+      const result = await handle.promise;
+      const durationMs = Date.now() - startTime;
+
+      // Check if we got any meaningful response
+      if (result.status === 'completed' && output.length > 0) {
+        return {
+          success: true,
+          durationMs,
+        };
+      }
+
+      if (result.status === 'timeout') {
+        return {
+          success: false,
+          error: 'Agent timed out without responding',
+          suggestion: this.getPreflightSuggestion(),
+          durationMs,
+        };
+      }
+
+      if (result.status === 'failed') {
+        return {
+          success: false,
+          error: result.error ?? 'Agent execution failed',
+          suggestion: this.getPreflightSuggestion(),
+          durationMs,
+        };
+      }
+
+      return {
+        success: false,
+        error: 'Agent did not produce any output',
+        suggestion: this.getPreflightSuggestion(),
+        durationMs,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        suggestion: this.getPreflightSuggestion(),
+        durationMs: Date.now() - startTime,
+      };
+    }
+  }
+
+  /**
+   * Get agent-specific suggestions for preflight failures.
+   * Subclasses should override to provide helpful guidance.
+   */
+  protected getPreflightSuggestion(): string {
+    return `Verify ${this.meta.name} is properly configured and can respond to prompts`;
   }
 
   /**

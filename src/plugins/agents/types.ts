@@ -4,6 +4,9 @@
  * (Claude Code, OpenCode, Cursor, etc.)
  */
 
+import type { SandboxConfig } from '../../sandbox/types.js';
+import type { FormattedSegment } from './output-formatting.js';
+
 /**
  * Result of detecting whether an agent CLI is available.
  */
@@ -19,6 +22,24 @@ export interface AgentDetectResult {
 
   /** Error message if detection failed */
   error?: string;
+}
+
+/**
+ * Result of a preflight check to verify the agent is fully operational.
+ * Preflight goes beyond detection by actually running a test prompt.
+ */
+export interface AgentPreflightResult {
+  /** Whether the agent successfully responded to a test prompt */
+  success: boolean;
+
+  /** Error message if preflight failed */
+  error?: string;
+
+  /** Helpful suggestion for resolving the issue */
+  suggestion?: string;
+
+  /** How long the preflight check took in milliseconds */
+  durationMs?: number;
 }
 
 /**
@@ -99,8 +120,13 @@ export interface AgentExecuteOptions {
   /** Additional CLI flags to pass to the agent */
   flags?: string[];
 
-  /** Callback for streaming stdout */
+  sandbox?: SandboxConfig;
+
+  /** Callback for streaming stdout (legacy string format) */
   onStdout?: (data: string) => void;
+
+  /** Callback for streaming stdout as TUI-native segments */
+  onStdoutSegments?: (segments: FormattedSegment[]) => void;
 
   /** Callback for streaming stderr */
   onStderr?: (data: string) => void;
@@ -113,6 +139,13 @@ export interface AgentExecuteOptions {
 
   /** Enable subagent tracing for structured output (JSONL format for Claude) */
   subagentTracing?: boolean;
+
+  /**
+   * Callback for raw JSONL messages parsed by the agent.
+   * Used by the engine to track subagent activity without re-parsing output.
+   * The message object is the raw parsed JSON from the agent's JSONL output.
+   */
+  onJsonlMessage?: (message: Record<string, unknown>) => void;
 }
 
 /**
@@ -201,6 +234,43 @@ export interface AgentPluginConfig {
 
   /** Rate limit handling configuration for this agent */
   rateLimitHandling?: RateLimitHandlingConfig;
+
+  /**
+   * Environment variables to exclude when spawning the agent process.
+   * Use this to prevent sensitive keys from being inherited by the agent.
+   * Supports exact names (e.g., "ANTHROPIC_API_KEY") or glob patterns (e.g., "*_API_KEY").
+   *
+   * @example ["ANTHROPIC_API_KEY"] - Exclude specific key
+   * @example ["*_API_KEY", "*_SECRET"] - Exclude all API keys and secrets
+   */
+  envExclude?: string[];
+}
+
+export interface AgentSandboxRequirements {
+  authPaths: string[];
+  binaryPaths: string[];
+  runtimePaths: string[];
+  requiresNetwork: boolean;
+}
+
+/**
+ * Paths where an agent stores skills/plugins.
+ * Each agent has its own conventions for where skills are installed.
+ */
+export interface AgentSkillsPaths {
+  /**
+   * Personal/global skills directory (e.g., ~/.claude/skills/).
+   * Skills installed here are available across all projects.
+   * Path may use ~ for home directory.
+   */
+  personal: string;
+
+  /**
+   * Repository-local skills directory (e.g., .claude/skills/).
+   * Relative path from project root.
+   * Skills installed here are only available in the specific project.
+   */
+  repo: string;
 }
 
 /**
@@ -239,6 +309,12 @@ export interface AgentPluginMeta {
 
   /** Format of structured output when supportsSubagentTracing is true */
   structuredOutputFormat?: 'json' | 'jsonl';
+
+  /**
+   * Paths where this agent stores skills.
+   * If undefined, the agent does not support skill installation.
+   */
+  skillsPaths?: AgentSkillsPaths;
 }
 
 /**
@@ -285,6 +361,8 @@ export interface AgentPlugin {
    * @returns Detection result with availability and version info
    */
   detect(): Promise<AgentDetectResult>;
+
+  getSandboxRequirements(): AgentSandboxRequirements;
 
   /**
    * Execute the agent with a prompt and optional file context.
@@ -338,6 +416,16 @@ export interface AgentPlugin {
    * @returns null if valid, or an error message string if invalid
    */
   validateModel(model: string): string | null;
+
+  /**
+   * Run a preflight check to verify the agent is fully operational.
+   * This goes beyond detect() by actually running a minimal test prompt
+   * to verify the agent can process requests (e.g., has a valid model configured).
+   *
+   * @param options Optional configuration for the preflight check
+   * @returns Preflight result with success status and any error/suggestion
+   */
+  preflight(options?: { timeout?: number }): Promise<AgentPreflightResult>;
 
   /**
    * Clean up resources when the plugin is unloaded.

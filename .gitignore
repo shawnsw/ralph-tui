@@ -53,6 +53,5 @@ Thumbs.db
 # Local examples and test files
 examples/
 prd-example.json
-
-# Personal context (not for upstream)
-.kiro/
+coverage/
+package-lock.json

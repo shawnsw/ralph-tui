@@ -13,8 +13,13 @@ import type {
   RalphConfig,
   RuntimeOptions,
   ConfigValidationResult,
+  SandboxConfig,
 } from './types.js';
-import { DEFAULT_CONFIG, DEFAULT_ERROR_HANDLING } from './types.js';
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_ERROR_HANDLING,
+  DEFAULT_SANDBOX_CONFIG,
+} from './types.js';
 import type { ErrorHandlingConfig } from '../engine/types.js';
 import type { AgentPluginConfig } from '../plugins/agents/types.js';
 import type { TrackerPluginConfig } from '../plugins/trackers/types.js';
@@ -134,6 +139,9 @@ async function findProjectConfigPath(startDir: string): Promise<string | null> {
 function mergeConfigs(global: StoredConfig, project: StoredConfig): StoredConfig {
   const merged: StoredConfig = { ...global };
 
+  // Config version from project takes precedence
+  if (project.configVersion !== undefined) merged.configVersion = project.configVersion;
+
   // Override scalar values from project
   if (project.defaultAgent !== undefined) merged.defaultAgent = project.defaultAgent;
   if (project.defaultTracker !== undefined) merged.defaultTracker = project.defaultTracker;
@@ -142,6 +150,7 @@ function mergeConfigs(global: StoredConfig, project: StoredConfig): StoredConfig
   if (project.outputDir !== undefined) merged.outputDir = project.outputDir;
   if (project.agent !== undefined) merged.agent = project.agent;
   if (project.agentCommand !== undefined) merged.agentCommand = project.agentCommand;
+  if (project.command !== undefined) merged.command = project.command;
   if (project.tracker !== undefined) merged.tracker = project.tracker;
 
   // Replace arrays entirely if present in project config
@@ -157,6 +166,9 @@ function mergeConfigs(global: StoredConfig, project: StoredConfig): StoredConfig
   }
   if (project.errorHandling !== undefined) {
     merged.errorHandling = { ...merged.errorHandling, ...project.errorHandling };
+  }
+  if (project.sandbox !== undefined) {
+    merged.sandbox = { ...merged.sandbox, ...project.sandbox };
   }
 
   // Override prompt template
@@ -174,6 +186,7 @@ function mergeConfigs(global: StoredConfig, project: StoredConfig): StoredConfig
 
   // Replace arrays entirely if present in project config
   if (project.fallbackAgents !== undefined) merged.fallbackAgents = project.fallbackAgents;
+  if (project.envExclude !== undefined) merged.envExclude = project.envExclude;
 
   // Merge nested objects
   if (project.rateLimitHandling !== undefined) {
@@ -290,6 +303,14 @@ function getDefaultAgentConfig(
       };
     }
 
+    // Apply CLI --variant to agent options (for agents like OpenCode that support it)
+    if (options.variant) {
+      result = {
+        ...result,
+        options: { ...result.options, variant: options.variant },
+      };
+    }
+
     // Apply fallbackAgents shorthand (only if not already set on agent config)
     if (storedConfig.fallbackAgents && !result.fallbackAgents) {
       result = {
@@ -303,6 +324,23 @@ function getDefaultAgentConfig(
       result = {
         ...result,
         rateLimitHandling: storedConfig.rateLimitHandling,
+      };
+    }
+
+    // Apply command shorthand (only if not already set on agent config)
+    // This allows users to specify a custom executable like 'ccr code' for Claude Code Router
+    if (storedConfig.command && !result.command) {
+      result = {
+        ...result,
+        command: storedConfig.command,
+      };
+    }
+
+    // Apply envExclude shorthand (only if not already set on agent config)
+    if (storedConfig.envExclude && !result.envExclude) {
+      result = {
+        ...result,
+        envExclude: storedConfig.envExclude,
       };
     }
 
@@ -520,6 +558,12 @@ export async function buildConfig(
     ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
   };
 
+  const sandbox: SandboxConfig = {
+    ...DEFAULT_SANDBOX_CONFIG,
+    ...(storedConfig.sandbox ?? {}),
+    ...(options.sandbox ?? {}),
+  };
+
   return {
     agent: agentConfig,
     tracker: trackerConfig,
@@ -539,6 +583,7 @@ export async function buildConfig(
     model: options.model,
     showTui: !options.headless,
     errorHandling,
+    sandbox,
     // CLI --prompt takes precedence over config file prompt_template
     promptTemplate: options.promptPath ?? storedConfig.prompt_template,
   };
@@ -589,7 +634,10 @@ export async function validateConfig(
 
   if (config.tracker.plugin === 'json') {
     if (!config.prdPath) {
-      errors.push('PRD path required for json tracker');
+      // No error - TUI will show file prompt dialog to let user select a file
+      warnings.push(
+        'No PRD path specified for json tracker; TUI will prompt for file selection'
+      );
     } else {
       // Validate PRD file exists and is valid JSON
       const prdFilePath = resolve(config.cwd, config.prdPath);
@@ -639,7 +687,7 @@ export async function validateConfig(
 
 // Re-export types
 export type { StoredConfig, RalphConfig, RuntimeOptions, ConfigValidationResult, SubagentDetailLevel, NotificationSoundMode } from './types.js';
-export { DEFAULT_CONFIG };
+export { DEFAULT_CONFIG, DEFAULT_SANDBOX_CONFIG };
 
 // Export schema utilities
 export {
@@ -695,6 +743,20 @@ export function getProjectConfigPath(cwd: string = process.cwd()): string {
  */
 export function getProjectConfigDir(cwd: string = process.cwd()): string {
   return join(cwd, PROJECT_CONFIG_DIR);
+}
+
+/**
+ * Load only the project config without merging with global config.
+ * Useful for migrations where we need to update only the project config.
+ * @param cwd Working directory
+ * @returns Project config only (empty object if no config exists)
+ */
+export async function loadProjectConfigOnly(
+  cwd: string = process.cwd()
+): Promise<StoredConfig> {
+  const projectPath = getProjectConfigPath(cwd);
+  const result = await loadConfigFile(projectPath);
+  return result.config;
 }
 
 /**
