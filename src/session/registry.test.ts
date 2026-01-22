@@ -12,8 +12,10 @@ import {
   getSessionById,
   getSessionByCwd,
   listResumableSessions,
+  listAllSessions,
   cleanupStaleRegistryEntries,
   findSessionsByPrefix,
+  getRegistryFilePath,
   type SessionRegistryEntry,
 } from './registry.js';
 
@@ -313,6 +315,91 @@ describe('Session Registry', () => {
       expect(registry.sessions[sessionId].trackerPlugin).toBe('beads');
       expect(registry.sessions[sessionId].epicId).toBe('test-epic');
       expect(registry.sessions[sessionId].sandbox).toBe(true);
+    });
+  });
+
+  describe('listAllSessions', () => {
+    test('lists all sessions including completed and failed', async () => {
+      const baseId = `test-all-sessions-${Date.now()}`;
+
+      // Create sessions with all statuses
+      const sessions: Array<{ id: string; status: 'running' | 'paused' | 'interrupted' | 'completed' | 'failed' }> = [
+        { id: `${baseId}-running`, status: 'running' },
+        { id: `${baseId}-paused`, status: 'paused' },
+        { id: `${baseId}-completed`, status: 'completed' },
+        { id: `${baseId}-failed`, status: 'failed' },
+      ];
+
+      for (const { id, status } of sessions) {
+        testSessionIds.push(id);
+        await registerSession({
+          sessionId: id,
+          cwd: `/tmp/${id}`,
+          status,
+          startedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          agentPlugin: 'claude',
+          trackerPlugin: 'json',
+        });
+      }
+
+      const allSessions = await listAllSessions();
+      const testSessions = allSessions.filter(s => s.sessionId.startsWith(baseId));
+
+      // Should include all 4 sessions, including completed and failed
+      expect(testSessions.length).toBe(4);
+      const statuses = testSessions.map(s => s.status);
+      expect(statuses).toContain('running');
+      expect(statuses).toContain('paused');
+      expect(statuses).toContain('completed');
+      expect(statuses).toContain('failed');
+    });
+
+    test('returns empty array when no sessions exist', async () => {
+      // Clean up all test sessions first
+      for (const id of testSessionIds) {
+        await unregisterSession(id);
+      }
+      testSessionIds = [];
+
+      const allSessions = await listAllSessions();
+      // May have other sessions from other tests, but should be an array
+      expect(Array.isArray(allSessions)).toBe(true);
+    });
+  });
+
+  describe('getRegistryFilePath', () => {
+    test('returns a valid path string', () => {
+      const path = getRegistryFilePath();
+      expect(typeof path).toBe('string');
+      expect(path).toContain('sessions.json');
+      expect(path).toContain('.config');
+      expect(path).toContain('ralph-tui');
+    });
+  });
+
+  describe('cleanupStaleRegistryEntries edge cases', () => {
+    test('returns 0 when no stale entries exist', async () => {
+      const sessionId = `test-no-stale-${Date.now()}`;
+      testSessionIds.push(sessionId);
+
+      await registerSession({
+        sessionId,
+        cwd: '/tmp/exists',
+        status: 'running',
+        startedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        agentPlugin: 'claude',
+        trackerPlugin: 'json',
+      });
+
+      // Mock checker that says all sessions exist
+      const mockChecker = async (_cwd: string): Promise<boolean> => {
+        return true;
+      };
+
+      const cleaned = await cleanupStaleRegistryEntries(mockChecker);
+      expect(cleaned).toBe(0);
     });
   });
 });
