@@ -16,6 +16,12 @@ import type {
 } from '../types.js';
 
 /**
+ * Valid Kiro model names.
+ * Empty string means use default (Auto routing).
+ */
+const VALID_KIRO_MODELS = ['', 'claude-sonnet4', 'claude-sonnet4.5', 'claude-haiku4.5', 'claude-opus4.5'] as const;
+
+/**
  * Kiro CLI agent plugin implementation.
  * Uses `kiro-cli chat --no-interactive` for non-interactive AI coding tasks.
  * Note: Kiro outputs text only (no JSONL), so subagent tracing shows activity indicator only.
@@ -57,8 +63,11 @@ export class KiroAgentPlugin extends BaseAgentPlugin {
       this.agent = config.agent;
     }
 
-    if (typeof config.model === 'string' && config.model.length > 0) {
-      this.model = config.model;
+    if (typeof config.model === 'string') {
+      const model = config.model.trim();
+      if (model && !this.validateModel(model)) {
+        this.model = model;
+      }
     }
 
     if (typeof config.timeout === 'number' && config.timeout > 0) {
@@ -233,9 +242,8 @@ export class KiroAgentPlugin extends BaseAgentPlugin {
   }
 
   override validateModel(model: string): string | null {
-    const validModels = ['auto', 'claude-sonnet4', 'claude-sonnet4.5', 'claude-haiku4.5', 'claude-opus4.5'];
-    if (model && !validModels.includes(model)) {
-      return `Invalid model. Must be one of: ${validModels.join(', ')}`;
+    if (model && !VALID_KIRO_MODELS.includes(model as typeof VALID_KIRO_MODELS[number])) {
+      return `Invalid model. Must be one of: ${VALID_KIRO_MODELS.filter(m => m).join(', ')} (or empty for Auto)`;
     }
     return null;
   }

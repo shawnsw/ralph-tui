@@ -152,7 +152,6 @@ describe('KiroAgentPlugin', () => {
   describe('validateModel', () => {
     test('accepts valid Kiro models', () => {
       expect(plugin.validateModel('')).toBeNull();
-      expect(plugin.validateModel('auto')).toBeNull();
       expect(plugin.validateModel('claude-sonnet4')).toBeNull();
       expect(plugin.validateModel('claude-sonnet4.5')).toBeNull();
       expect(plugin.validateModel('claude-haiku4.5')).toBeNull();
@@ -160,6 +159,7 @@ describe('KiroAgentPlugin', () => {
     });
 
     test('rejects invalid model names', () => {
+      expect(plugin.validateModel('auto')).toContain('Invalid model');
       expect(plugin.validateModel('gpt-4')).toContain('Invalid model');
       expect(plugin.validateModel('claude-3')).toContain('Invalid model');
       expect(plugin.validateModel('sonnet')).toContain('Invalid model');
