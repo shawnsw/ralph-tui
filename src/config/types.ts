@@ -224,6 +224,13 @@ export interface StoredConfig {
    */
   envExclude?: string[];
 
+  /**
+   * Shorthand: whether to apply default env exclusion patterns for the default agent.
+   * When true (default), built-in patterns are automatically excluded.
+   * Set to false to disable default patterns.
+   */
+  envExcludeDefaults?: boolean;
+
   /** Whether to auto-commit after successful tasks */
   autoCommit?: boolean;
 

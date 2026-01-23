@@ -13,7 +13,7 @@ import {
 
 // Import the module to test internal functions via a workaround
 // We'll test the public interface and behavior
-import { BaseAgentPlugin } from './base.js';
+import { BaseAgentPlugin, DEFAULT_ENV_EXCLUDE_PATTERNS } from './base.js';
 import type {
   AgentPluginMeta,
   AgentFileContext,
@@ -693,6 +693,224 @@ describe('BaseAgentPlugin envExclude', () => {
       }
 
       await agent.dispose();
+    });
+  });
+
+  describe('default environment variable exclusion (envExcludeDefaults)', () => {
+    test('excludes *_API_KEY by default without any user config', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({});
+
+      const originalValue = process.env.TEST_API_KEY;
+      process.env.TEST_API_KEY = 'default-excluded-key';
+
+      let stdout = '';
+      const handle = agent.execute('TEST_API_KEY', [], {
+        onStdout: (data) => {
+          stdout += data;
+        },
+      });
+
+      await handle.promise;
+
+      if (originalValue === undefined) {
+        delete process.env.TEST_API_KEY;
+      } else {
+        process.env.TEST_API_KEY = originalValue;
+      }
+
+      await agent.dispose();
+
+      expect(stdout).not.toContain('default-excluded-key');
+    });
+
+    test('excludes *_SECRET by default without any user config', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({});
+
+      const originalValue = process.env.TEST_DB_SECRET;
+      process.env.TEST_DB_SECRET = 'default-excluded-secret';
+
+      let stdout = '';
+      const handle = agent.execute('TEST_DB_SECRET', [], {
+        onStdout: (data) => {
+          stdout += data;
+        },
+      });
+
+      await handle.promise;
+
+      if (originalValue === undefined) {
+        delete process.env.TEST_DB_SECRET;
+      } else {
+        process.env.TEST_DB_SECRET = originalValue;
+      }
+
+      await agent.dispose();
+
+      expect(stdout).not.toContain('default-excluded-secret');
+    });
+
+    test('excludes *_SECRET_KEY by default without any user config', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({});
+
+      const originalValue = process.env.AWS_SECRET_KEY;
+      process.env.AWS_SECRET_KEY = 'default-excluded-secret-key';
+
+      let stdout = '';
+      const handle = agent.execute('AWS_SECRET_KEY', [], {
+        onStdout: (data) => {
+          stdout += data;
+        },
+      });
+
+      await handle.promise;
+
+      if (originalValue === undefined) {
+        delete process.env.AWS_SECRET_KEY;
+      } else {
+        process.env.AWS_SECRET_KEY = originalValue;
+      }
+
+      await agent.dispose();
+
+      expect(stdout).not.toContain('default-excluded-secret-key');
+    });
+
+    test('excludes ANTHROPIC_API_KEY by default (the key billing issue)', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({});
+
+      const originalValue = process.env.ANTHROPIC_API_KEY;
+      process.env.ANTHROPIC_API_KEY = 'sk-ant-default-excluded';
+
+      let stdout = '';
+      const handle = agent.execute('ANTHROPIC_API_KEY', [], {
+        onStdout: (data) => {
+          stdout += data;
+        },
+      });
+
+      await handle.promise;
+
+      if (originalValue === undefined) {
+        delete process.env.ANTHROPIC_API_KEY;
+      } else {
+        process.env.ANTHROPIC_API_KEY = originalValue;
+      }
+
+      await agent.dispose();
+
+      expect(stdout).not.toContain('sk-ant-default-excluded');
+    });
+
+    test('allows non-sensitive variables through by default', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({});
+
+      const originalValue = process.env.TEST_SAFE_VAR;
+      process.env.TEST_SAFE_VAR = 'safe-value-kept';
+
+      let stdout = '';
+      const handle = agent.execute('TEST_SAFE_VAR', [], {
+        onStdout: (data) => {
+          stdout += data;
+        },
+      });
+
+      await handle.promise;
+
+      if (originalValue === undefined) {
+        delete process.env.TEST_SAFE_VAR;
+      } else {
+        process.env.TEST_SAFE_VAR = originalValue;
+      }
+
+      await agent.dispose();
+
+      expect(stdout).toContain('safe-value-kept');
+    });
+
+    test('disabling defaults with envExcludeDefaults=false passes API keys through', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({
+        envExcludeDefaults: false,
+      });
+
+      const originalValue = process.env.TEST_API_KEY;
+      process.env.TEST_API_KEY = 'key-passed-through';
+
+      let stdout = '';
+      const handle = agent.execute('TEST_API_KEY', [], {
+        onStdout: (data) => {
+          stdout += data;
+        },
+      });
+
+      await handle.promise;
+
+      if (originalValue === undefined) {
+        delete process.env.TEST_API_KEY;
+      } else {
+        process.env.TEST_API_KEY = originalValue;
+      }
+
+      await agent.dispose();
+
+      expect(stdout).toContain('key-passed-through');
+    });
+
+    test('user envExclude extends defaults', async () => {
+      const agent = new EnvTestPlugin();
+      await agent.initialize({
+        envExclude: ['CUSTOM_VAR'],
+      });
+
+      const origApiKey = process.env.TEST_API_KEY;
+      const origCustom = process.env.CUSTOM_VAR;
+      process.env.TEST_API_KEY = 'default-blocked';
+      process.env.CUSTOM_VAR = 'custom-blocked';
+
+      // Test default pattern still blocks
+      let stdout1 = '';
+      const handle1 = agent.execute('TEST_API_KEY', [], {
+        onStdout: (data) => {
+          stdout1 += data;
+        },
+      });
+      await handle1.promise;
+      expect(stdout1).not.toContain('default-blocked');
+
+      // Test user pattern also blocks
+      let stdout2 = '';
+      const handle2 = agent.execute('CUSTOM_VAR', [], {
+        onStdout: (data) => {
+          stdout2 += data;
+        },
+      });
+      await handle2.promise;
+      expect(stdout2).not.toContain('custom-blocked');
+
+      if (origApiKey === undefined) {
+        delete process.env.TEST_API_KEY;
+      } else {
+        process.env.TEST_API_KEY = origApiKey;
+      }
+      if (origCustom === undefined) {
+        delete process.env.CUSTOM_VAR;
+      } else {
+        process.env.CUSTOM_VAR = origCustom;
+      }
+
+      await agent.dispose();
+    });
+
+    test('DEFAULT_ENV_EXCLUDE_PATTERNS is exported and contains expected patterns', () => {
+      expect(DEFAULT_ENV_EXCLUDE_PATTERNS).toContain('*_API_KEY');
+      expect(DEFAULT_ENV_EXCLUDE_PATTERNS).toContain('*_SECRET_KEY');
+      expect(DEFAULT_ENV_EXCLUDE_PATTERNS).toContain('*_SECRET');
+      expect(DEFAULT_ENV_EXCLUDE_PATTERNS.length).toBeGreaterThanOrEqual(3);
     });
   });
 });

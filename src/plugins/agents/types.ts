@@ -244,6 +244,14 @@ export interface AgentPluginConfig {
    * @example ["*_API_KEY", "*_SECRET"] - Exclude all API keys and secrets
    */
   envExclude?: string[];
+
+  /**
+   * Whether to apply default environment variable exclusion patterns.
+   * When true (default), built-in patterns like *_API_KEY, *_SECRET_KEY, and *_SECRET
+   * are automatically excluded to prevent accidental key leakage from .env files.
+   * Set to false to disable default patterns (user-configured envExclude still applies).
+   */
+  envExcludeDefaults?: boolean;
 }
 
 export interface AgentSandboxRequirements {

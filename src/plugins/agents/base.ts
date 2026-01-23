@@ -103,6 +103,18 @@ interface RunningExecution {
 }
 
 /**
+ * Default environment variable exclusion patterns.
+ * These are excluded by default to prevent accidental API key leakage
+ * (e.g., from .env files auto-loaded by Bun) which can cause unexpected billing.
+ * Users can disable these defaults with envExcludeDefaults = false.
+ */
+export const DEFAULT_ENV_EXCLUDE_PATTERNS: readonly string[] = [
+  '*_API_KEY',
+  '*_SECRET_KEY',
+  '*_SECRET',
+];
+
+/**
  * Abstract base class for agent plugins.
  * Provides sensible defaults and utility methods for executing CLI-based agents.
  */
@@ -154,7 +166,8 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
   protected commandPath?: string;
   protected defaultFlags: string[] = [];
   protected defaultTimeout = 0; // 0 = no timeout
-  protected envExclude: string[] = []; // Environment variables to exclude
+  protected envExclude: string[] = []; // User-configured environment variables to exclude
+  protected envExcludeDefaults = true; // Whether to apply DEFAULT_ENV_EXCLUDE_PATTERNS
 
   /** Map of running executions by ID */
   private executions: Map<string, RunningExecution> = new Map();
@@ -188,6 +201,10 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
       this.envExclude = config.envExclude.filter(
         (p): p is string => typeof p === 'string' && p.length > 0
       );
+    }
+
+    if (typeof config.envExcludeDefaults === 'boolean') {
+      this.envExcludeDefaults = config.envExcludeDefaults;
     }
 
     this.ready = true;
@@ -317,7 +334,11 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
     const timeout = options?.timeout ?? this.defaultTimeout;
 
     // Merge environment, filtering out excluded variables
-    const baseEnv = filterEnvByExclude(process.env, this.envExclude);
+    // Default patterns are applied unless explicitly disabled
+    const effectiveExclude = this.envExcludeDefaults
+      ? [...DEFAULT_ENV_EXCLUDE_PATTERNS, ...this.envExclude]
+      : this.envExclude;
+    const baseEnv = filterEnvByExclude(process.env, effectiveExclude);
     const env = {
       ...baseEnv,
       ...options?.env,

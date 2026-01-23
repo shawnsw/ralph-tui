@@ -72,6 +72,7 @@ async function runDiagnostics(
       options: storedConfig.agentOptions ?? {},
       command: storedConfig.command,
       envExclude: storedConfig.envExclude,
+      envExcludeDefaults: storedConfig.envExcludeDefaults,
     });
   } catch (error) {
     return {

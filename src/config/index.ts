@@ -344,6 +344,17 @@ function getDefaultAgentConfig(
       };
     }
 
+    // Apply envExcludeDefaults shorthand (only if not already set on agent config)
+    if (
+      storedConfig.envExcludeDefaults !== undefined &&
+      result.envExcludeDefaults === undefined
+    ) {
+      result = {
+        ...result,
+        envExcludeDefaults: storedConfig.envExcludeDefaults,
+      };
+    }
+
     return result;
   };
 
