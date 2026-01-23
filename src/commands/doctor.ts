@@ -87,18 +87,12 @@ async function runDiagnostics(
     };
   }
 
-  // Check environment variable exclusions
+  // Collect environment variable exclusion info (displayed in printHumanResult)
   const envExclusion = getEnvExclusionReport(
     process.env,
     storedConfig.envPassthrough,
     storedConfig.envExclude
   );
-  const envLines = formatEnvExclusionReport(envExclusion);
-  log('');
-  for (const line of envLines) {
-    log(`  ${line}`);
-  }
-  log('');
 
   // Run detection
   log(`\n🔍 Checking ${agent.meta.name}...\n`);
@@ -207,14 +201,11 @@ function printHumanResult(result: DoctorResult): void {
     console.log('');
   }
 
-  // Environment variable exclusion info
-  if (result.envExclusion && (result.envExclusion.blocked.length > 0 || result.envExclusion.allowed.length > 0)) {
-    console.log('  Environment:');
-    if (result.envExclusion.blocked.length > 0) {
-      console.log(`    Blocked:     ${result.envExclusion.blocked.join(', ')}`);
-    }
-    if (result.envExclusion.allowed.length > 0) {
-      console.log(`    Passthrough: ${result.envExclusion.allowed.join(', ')}`);
+  // Environment variable exclusion info (always shown)
+  if (result.envExclusion) {
+    const envLines = formatEnvExclusionReport(result.envExclusion);
+    for (const line of envLines) {
+      console.log(`  ${line}`);
     }
     console.log('');
   }

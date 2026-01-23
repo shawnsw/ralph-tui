@@ -1544,11 +1544,11 @@ export async function executeRunCommand(args: string[]): Promise<void> {
     console.warn(`Warning: ${warning}`);
   }
 
-  // Show environment variable exclusion report upfront
+  // Show environment variable exclusion report upfront (using resolved agent config)
   const envReport = getEnvExclusionReport(
     process.env,
-    storedConfig?.envPassthrough,
-    storedConfig?.envExclude
+    config.agent.envPassthrough,
+    config.agent.envExclude
   );
   const envLines = formatEnvExclusionReport(envReport);
   for (const line of envLines) {

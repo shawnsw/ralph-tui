@@ -104,9 +104,10 @@ interface RunningExecution {
 
 /**
  * Default environment variable exclusion patterns.
- * These are excluded by default to prevent accidental API key leakage
- * (e.g., from .env files auto-loaded by Bun) which can cause unexpected billing.
- * Users can disable these defaults with envExcludeDefaults = false.
+ * These patterns are always excluded from agent subprocesses to prevent accidental
+ * API key leakage (e.g., from .env files auto-loaded by Bun) which can cause
+ * unexpected billing. Use the envPassthrough config option to explicitly allow
+ * specific variables matching these patterns through to the agent.
  */
 export const DEFAULT_ENV_EXCLUDE_PATTERNS: readonly string[] = [
   '*_API_KEY',

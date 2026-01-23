@@ -306,11 +306,18 @@ export async function collectSystemInfo(cwd: string = process.cwd()): Promise<Sy
   // Collect skills info
   const skills = await collectSkillsInfo(agentRegistry, config.skills_dir ?? null, cwd);
 
-  // Collect env exclusion info
+  // Resolve agent-specific env settings (per-agent overrides take precedence over top-level)
+  const resolvedAgent = config.agents?.find(
+    (a) => a.name === agentName || a.plugin === agentName
+  );
+  const agentEnvPassthrough = resolvedAgent?.envPassthrough ?? config.envPassthrough;
+  const agentEnvExclude = resolvedAgent?.envExclude ?? config.envExclude;
+
+  // Collect env exclusion info using resolved agent config
   const envExclusion = getEnvExclusionReport(
     process.env,
-    config.envPassthrough,
-    config.envExclude
+    agentEnvPassthrough,
+    agentEnvExclude
   );
 
   // Determine runtime
