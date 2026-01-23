@@ -344,14 +344,11 @@ function getDefaultAgentConfig(
       };
     }
 
-    // Apply envExcludeDefaults shorthand (only if not already set on agent config)
-    if (
-      storedConfig.envExcludeDefaults !== undefined &&
-      result.envExcludeDefaults === undefined
-    ) {
+    // Apply envPassthrough shorthand (only if not already set on agent config)
+    if (storedConfig.envPassthrough && !result.envPassthrough) {
       result = {
         ...result,
-        envExcludeDefaults: storedConfig.envExcludeDefaults,
+        envPassthrough: storedConfig.envPassthrough,
       };
     }
 

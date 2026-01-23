@@ -225,11 +225,11 @@ export interface StoredConfig {
   envExclude?: string[];
 
   /**
-   * Shorthand: whether to apply default env exclusion patterns for the default agent.
-   * When true (default), built-in patterns are automatically excluded.
-   * Set to false to disable default patterns.
+   * Shorthand: environment variables to pass through despite matching default exclusion patterns.
+   * Use this to explicitly allow specific keys that are blocked by built-in defaults.
+   * Supports exact names (e.g., "ANTHROPIC_API_KEY") or glob patterns.
    */
-  envExcludeDefaults?: boolean;
+  envPassthrough?: string[];
 
   /** Whether to auto-commit after successful tasks */
   autoCommit?: boolean;

@@ -246,12 +246,15 @@ export interface AgentPluginConfig {
   envExclude?: string[];
 
   /**
-   * Whether to apply default environment variable exclusion patterns.
-   * When true (default), built-in patterns like *_API_KEY, *_SECRET_KEY, and *_SECRET
-   * are automatically excluded to prevent accidental key leakage from .env files.
-   * Set to false to disable default patterns (user-configured envExclude still applies).
+   * Environment variables to pass through despite matching default exclusion patterns.
+   * Use this to explicitly allow specific keys that are blocked by the built-in
+   * defaults (*_API_KEY, *_SECRET_KEY, *_SECRET).
+   * Supports exact names (e.g., "ANTHROPIC_API_KEY") or glob patterns.
+   *
+   * @example ["ANTHROPIC_API_KEY"] - Allow this specific key through
+   * @example ["MY_*"] - Allow all MY_* vars through even if they match *_API_KEY
    */
-  envExcludeDefaults?: boolean;
+  envPassthrough?: string[];
 }
 
 export interface AgentSandboxRequirements {

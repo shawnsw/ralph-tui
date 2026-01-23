@@ -133,14 +133,17 @@ function globMatch(pattern: string, str: string): boolean {
 }
 
 /**
- * Filter environment variables by excluding those matching patterns.
+ * Filter environment variables by excluding those matching patterns,
+ * with an optional passthrough list that overrides exclusions.
  * @param env Environment variables object
  * @param excludePatterns Patterns to exclude (exact names or glob patterns)
+ * @param passthroughPatterns Patterns to allow through despite matching exclusions
  * @returns Filtered environment object
  */
-function filterEnvByExclude(
+function filterEnvByExcludeWithPassthrough(
   env: NodeJS.ProcessEnv,
-  excludePatterns: string[]
+  excludePatterns: string[],
+  passthroughPatterns: string[]
 ): NodeJS.ProcessEnv {
   if (!excludePatterns || excludePatterns.length === 0) {
     return env;
@@ -148,14 +151,71 @@ function filterEnvByExclude(
 
   const filtered: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(env)) {
-    const shouldExclude = excludePatterns.some((pattern) =>
+    const matchesExclude = excludePatterns.some((pattern) =>
       globMatch(pattern, key)
     );
-    if (!shouldExclude) {
+    if (!matchesExclude) {
+      filtered[key] = value;
+    } else if (
+      passthroughPatterns.length > 0 &&
+      passthroughPatterns.some((pattern) => globMatch(pattern, key))
+    ) {
+      // Passthrough overrides exclusion
       filtered[key] = value;
     }
   }
   return filtered;
+}
+
+/**
+ * Report of environment variables detected as matching exclusion patterns.
+ */
+export interface EnvExclusionReport {
+  /** Variables that are blocked from reaching the agent process */
+  blocked: string[];
+  /** Variables that match exclusion patterns but are allowed via passthrough */
+  allowed: string[];
+}
+
+/**
+ * Detect environment variables matching default exclusion patterns and categorize them.
+ * Scans the current process.env for vars that would be blocked by default patterns,
+ * then splits them into blocked vs allowed (via passthrough).
+ *
+ * @param env Environment variables to scan (defaults to process.env)
+ * @param passthroughPatterns Patterns that override exclusions
+ * @param additionalExclude Extra exclusion patterns beyond defaults
+ * @returns Report with blocked and allowed variable names
+ */
+export function getEnvExclusionReport(
+  env: NodeJS.ProcessEnv = process.env,
+  passthroughPatterns: string[] = [],
+  additionalExclude: string[] = []
+): EnvExclusionReport {
+  const excludePatterns = [...DEFAULT_ENV_EXCLUDE_PATTERNS, ...additionalExclude];
+  const blocked: string[] = [];
+  const allowed: string[] = [];
+
+  for (const key of Object.keys(env)) {
+    const matchesExclude = excludePatterns.some((pattern) =>
+      globMatch(pattern, key)
+    );
+    if (!matchesExclude) {
+      continue;
+    }
+
+    const matchesPassthrough =
+      passthroughPatterns.length > 0 &&
+      passthroughPatterns.some((pattern) => globMatch(pattern, key));
+
+    if (matchesPassthrough) {
+      allowed.push(key);
+    } else {
+      blocked.push(key);
+    }
+  }
+
+  return { blocked: blocked.sort(), allowed: allowed.sort() };
 }
 
 export abstract class BaseAgentPlugin implements AgentPlugin {
@@ -167,7 +227,7 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
   protected defaultFlags: string[] = [];
   protected defaultTimeout = 0; // 0 = no timeout
   protected envExclude: string[] = []; // User-configured environment variables to exclude
-  protected envExcludeDefaults = true; // Whether to apply DEFAULT_ENV_EXCLUDE_PATTERNS
+  protected envPassthrough: string[] = []; // Vars to pass through despite matching defaults
 
   /** Map of running executions by ID */
   private executions: Map<string, RunningExecution> = new Map();
@@ -203,8 +263,10 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
       );
     }
 
-    if (typeof config.envExcludeDefaults === 'boolean') {
-      this.envExcludeDefaults = config.envExcludeDefaults;
+    if (Array.isArray(config.envPassthrough)) {
+      this.envPassthrough = config.envPassthrough.filter(
+        (p): p is string => typeof p === 'string' && p.length > 0
+      );
     }
 
     this.ready = true;
@@ -216,6 +278,15 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
    */
   async isReady(): Promise<boolean> {
     return this.ready;
+  }
+
+  /**
+   * Get a report of environment variables that are blocked vs allowed for this agent.
+   * Useful for diagnostics and informing users about which keys from .env files
+   * are being filtered.
+   */
+  getExclusionReport(): EnvExclusionReport {
+    return getEnvExclusionReport(process.env, this.envPassthrough, this.envExclude);
   }
 
   /**
@@ -333,12 +404,13 @@ export abstract class BaseAgentPlugin implements AgentPlugin {
     const startedAt = new Date();
     const timeout = options?.timeout ?? this.defaultTimeout;
 
-    // Merge environment, filtering out excluded variables
-    // Default patterns are applied unless explicitly disabled
-    const effectiveExclude = this.envExcludeDefaults
-      ? [...DEFAULT_ENV_EXCLUDE_PATTERNS, ...this.envExclude]
-      : this.envExclude;
-    const baseEnv = filterEnvByExclude(process.env, effectiveExclude);
+    // Merge environment: apply default + user exclusions, then re-include passthrough vars
+    const effectiveExclude = [...DEFAULT_ENV_EXCLUDE_PATTERNS, ...this.envExclude];
+    const baseEnv = filterEnvByExcludeWithPassthrough(
+      process.env,
+      effectiveExclude,
+      this.envPassthrough
+    );
     const env = {
       ...baseEnv,
       ...options?.env,

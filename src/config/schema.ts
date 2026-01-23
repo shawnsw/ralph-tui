@@ -79,7 +79,7 @@ export const AgentPluginConfigSchema = z.object({
   fallbackAgents: z.array(z.string().min(1)).optional(),
   rateLimitHandling: RateLimitHandlingConfigSchema.optional(),
   envExclude: z.array(z.string().min(1)).optional(),
-  envExcludeDefaults: z.boolean().optional(),
+  envPassthrough: z.array(z.string().min(1)).optional(),
 });
 
 /**
@@ -165,8 +165,8 @@ export const StoredConfigSchema = z
     // Environment variable exclusion (shorthand for default agent)
     envExclude: z.array(z.string().min(1)).optional(),
 
-    // Whether to apply default env exclusion patterns (default: true)
-    envExcludeDefaults: z.boolean().optional(),
+    // Environment variables to pass through despite matching default exclusion patterns
+    envPassthrough: z.array(z.string().min(1)).optional(),
 
     // Custom prompt template path
     prompt_template: z.string().optional(),
