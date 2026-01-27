@@ -825,11 +825,14 @@ describe('theme', () => {
     });
 
     test('resolves relative path from cwd', () => {
-      const relativePath = 'themes/custom.json';
+      // Use join() for OS-agnostic path construction
+      const relativePath = join('themes', 'custom.json');
       const result = resolveThemePath(relativePath);
 
       expect(result).toContain(process.cwd());
-      expect(result).toEndWith('themes/custom.json');
+      // Build expected suffix using join() so it works on Windows (backslashes) and POSIX (forward slashes)
+      const expectedSuffix = join('themes', 'custom.json');
+      expect(result).toEndWith(expectedSuffix);
     });
   });
 
