@@ -10,7 +10,6 @@ import {
   test,
   beforeEach,
   afterEach,
-  beforeAll,
   afterAll,
   mock,
   spyOn,
@@ -19,8 +18,6 @@ import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
-
-import { registerBuiltinTrackers } from '../plugins/trackers/builtin/index.js';
 
 // Store mock implementations that can be changed per test
 let mockPromptSelect: (prompt: string, choices: unknown[], options?: unknown) => Promise<string>;
@@ -65,6 +62,57 @@ const createMockAgentInstance = (id: string, name: string) => ({
   isReady: () => Promise.resolve(true),
   getSetupQuestions: () => [],
 });
+
+// Mock tracker plugin instances for deterministic detection results.
+// Beads-family trackers have detect() returning unavailable; json has no detect().
+// Override mockTrackerDetectOverride per-test to change detect() behavior.
+let mockTrackerDetectOverride: ((id: string) => Promise<{ available: boolean; error?: string }>) | null = null;
+
+const createMockTrackerInstance = (id: string) => {
+  const isBeadsFamily = id === 'beads' || id === 'beads-bv' || id === 'beads-rust';
+  return {
+    initialize: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
+    isReady: () => Promise.resolve(!isBeadsFamily),
+    getSetupQuestions: () => [],
+    meta: { id, name: id, description: `${id} tracker`, version: '1.0.0' },
+    ...(isBeadsFamily
+      ? {
+          detect: () => {
+            if (mockTrackerDetectOverride) {
+              return mockTrackerDetectOverride(id);
+            }
+            return Promise.resolve({
+              available: false,
+              error: `.beads directory not found: /tmp/.beads`,
+            });
+          },
+        }
+      : {}),
+  };
+};
+
+const trackerPluginMeta = [
+  { id: 'json', name: 'JSON', description: 'JSON file tracker', version: '1.0.0' },
+  { id: 'beads', name: 'Beads', description: 'Beads tracker', version: '1.0.0' },
+  { id: 'beads-bv', name: 'Beads + BV', description: 'Beads + BV tracker', version: '1.0.0' },
+  { id: 'beads-rust', name: 'Beads Rust', description: 'Beads Rust tracker', version: '1.0.0' },
+];
+
+mock.module('../plugins/trackers/registry.js', () => ({
+  getTrackerRegistry: () => ({
+    initialize: () => Promise.resolve(),
+    getRegisteredPlugins: () => trackerPluginMeta,
+    createInstance: (id: string) => createMockTrackerInstance(id),
+    hasPlugin: (name: string) => trackerPluginMeta.some((p) => p.id === name),
+    registerBuiltin: () => {},
+  }),
+}));
+
+// Mock registerBuiltinTrackers to no-op since registry is fully mocked
+mock.module('../plugins/trackers/builtin/index.js', () => ({
+  registerBuiltinTrackers: () => {},
+}));
 
 // Mock the agent registry to return our mock instance
 mock.module('../plugins/agents/registry.js', () => ({
@@ -111,11 +159,6 @@ import {
 async function createTempDir(): Promise<string> {
   return await mkdtemp(join(tmpdir(), 'ralph-tui-wizard-test-'));
 }
-
-// Register built-in tracker plugins before tests (agents are mocked)
-beforeAll(() => {
-  registerBuiltinTrackers();
-});
 
 // Restore mocks after all tests to prevent leakage to other test files
 afterAll(() => {
@@ -514,6 +557,7 @@ describe('tracker detection and unavailability', () => {
     tempDir = await createTempDir();
     capturedOutput = [];
     capturedTrackerChoices = [];
+    mockTrackerDetectOverride = null;
 
     consoleLogSpy = spyOn(console, 'log').mockImplementation((...args) => {
       capturedOutput.push(args.join(' '));
@@ -624,6 +668,37 @@ describe('tracker detection and unavailability', () => {
     }
   });
 
+  test('handles detect() throwing an error gracefully', async () => {
+    // Override detect to throw an error for beads trackers
+    mockTrackerDetectOverride = () => {
+      throw new Error('Unexpected detection failure');
+    };
+
+    mockPromptSelect = (prompt: string, choices: unknown[]) => {
+      if (prompt.includes('tracker')) {
+        capturedTrackerChoices = choices as typeof capturedTrackerChoices;
+        return Promise.resolve('json');
+      }
+      if (prompt.includes('agent')) return Promise.resolve('claude');
+      return Promise.resolve('');
+    };
+
+    await runSetupWizard({ cwd: tempDir });
+
+    // Beads trackers should still be unavailable (error caught)
+    const beadsChoice = capturedTrackerChoices.find((c) => c.value === 'beads');
+    expect(beadsChoice).toBeDefined();
+    expect(beadsChoice!.label).toContain('unavailable');
+
+    // JSON should still be available (no detect() method, so no error)
+    const jsonChoice = capturedTrackerChoices.find((c) => c.value === 'json');
+    expect(jsonChoice).toBeDefined();
+    expect(jsonChoice!.label).not.toContain('unavailable');
+
+    // Reset override
+    mockTrackerDetectOverride = null;
+  });
+
   test('defaults to first available tracker (json) when beads unavailable', async () => {
     let trackerDefault: string | undefined;
     mockPromptSelect = (prompt: string, _choices: unknown[], options?: unknown) => {
@@ -709,5 +784,33 @@ describe('formatTrackerUnavailableReason', () => {
     });
     expect(result).toContain('Beads tracker');
     expect(result).toContain('not detected');
+  });
+
+  test('skips beads heuristics for non-beads trackers and returns raw error', () => {
+    // A non-beads tracker with a "directory not found" error should NOT get beads-specific guidance
+    const result = formatTrackerUnavailableReason({
+      id: 'custom-tracker',
+      name: 'Custom',
+      description: 'Custom tracker',
+      available: false,
+      error: 'directory not found at /some/path',
+    });
+    // Should return raw error, not beads-specific ".beads directory" guidance
+    expect(result).toBe('directory not found at /some/path');
+    expect(result).not.toContain('bd init');
+    expect(result).not.toContain('br init');
+  });
+
+  test('skips beads heuristics for non-beads tracker with "not available" error', () => {
+    const result = formatTrackerUnavailableReason({
+      id: 'custom-tracker',
+      name: 'Custom',
+      description: 'Custom tracker',
+      available: false,
+      error: 'binary not available: some-binary',
+    });
+    // Should return raw error, not beads-specific CLI guidance
+    expect(result).toBe('binary not available: some-binary');
+    expect(result).not.toContain('CLI not found');
   });
 });

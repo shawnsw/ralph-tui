@@ -62,19 +62,22 @@ export async function projectConfigExists(cwd: string = process.cwd()): Promise<
  */
 export function formatTrackerUnavailableReason(plugin: PluginDetection): string {
   const error = plugin.error ?? '';
+  const isBeadsFamily = plugin.id === 'beads' || plugin.id === 'beads-bv' || plugin.id === 'beads-rust';
 
-  // Beads directory not found
-  if (error.includes('directory not found')) {
-    return 'No .beads directory found. Run "bd init" or "br init" to create one.';
+  if (isBeadsFamily) {
+    // Beads directory not found
+    if (error.includes('directory not found')) {
+      return 'No .beads directory found. Run "bd init" or "br init" to create one.';
+    }
+
+    // CLI binary not available
+    if (error.includes('binary not available') || error.includes('not available')) {
+      const cli = plugin.id === 'beads-rust' ? 'br' : 'bd';
+      return `${cli} CLI not found. Install it to use this tracker.`;
+    }
   }
 
-  // CLI binary not available
-  if (error.includes('binary not available') || error.includes('not available')) {
-    const cli = plugin.id === 'beads-rust' ? 'br' : 'bd';
-    return `${cli} CLI not found. Install it to use this tracker.`;
-  }
-
-  // Generic fallback
+  // Generic fallback for non-beads trackers or unrecognized beads errors
   if (error) {
     return error;
   }
@@ -87,7 +90,7 @@ export function formatTrackerUnavailableReason(plugin: PluginDetection): string 
  * For beads-family trackers, checks for .beads directory and CLI availability.
  * For other trackers (json), always marks as available.
  */
-async function detectTrackerPlugins(): Promise<PluginDetection[]> {
+async function detectTrackerPlugins(cwd?: string): Promise<PluginDetection[]> {
   const registry = getTrackerRegistry();
 
   // Register built-in plugins if not already done
@@ -112,15 +115,22 @@ async function detectTrackerPlugins(): Promise<PluginDetection[]> {
     let error: string | undefined;
     let version: string | undefined;
 
-    if (typeof instanceAsDetectable.detect === 'function') {
-      // Initialize with empty config so detect() can access workingDir/beadsDir defaults
-      await instance.initialize({});
-      const detectResult = await instanceAsDetectable.detect();
-      available = detectResult.available;
-      if (!available) {
-        error = detectResult.error;
-        version = detectResult.bdVersion ?? detectResult.brVersion;
+    try {
+      if (typeof instanceAsDetectable.detect === 'function') {
+        // Initialize with cwd so detect() can access the correct workingDir/beadsDir
+        await instance.initialize({ workingDir: cwd });
+        const detectResult = await instanceAsDetectable.detect();
+        available = detectResult.available;
+        if (!available) {
+          error = detectResult.error;
+          version = detectResult.bdVersion ?? detectResult.brVersion;
+        }
       }
+    } catch (err) {
+      available = false;
+      error = err instanceof Error ? err.message : String(err);
+    } finally {
+      await instance.dispose();
     }
 
     detections.push({
@@ -131,8 +141,6 @@ async function detectTrackerPlugins(): Promise<PluginDetection[]> {
       version: available ? meta.version : version,
       error,
     });
-
-    await instance.dispose();
   }
 
   return detections;
@@ -293,7 +301,7 @@ export async function runSetupWizard(
     // === Step 1: Select Tracker ===
     printSection('Issue Tracker Selection');
 
-    const trackerPlugins = await detectTrackerPlugins();
+    const trackerPlugins = await detectTrackerPlugins(cwd);
     if (trackerPlugins.length === 0) {
       return {
         success: false,

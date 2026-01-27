@@ -648,9 +648,15 @@ export async function validateConfig(
     config.tracker.plugin === 'beads-rust'
   ) {
     if (!config.epicId) {
-      warnings.push(
-        'No epic ID specified for beads tracker; will show interactive epic selection'
-      );
+      if (config.showTui) {
+        warnings.push(
+          'No epic ID specified for beads tracker; will show interactive epic selection'
+        );
+      } else {
+        warnings.push(
+          'No epic ID specified for beads tracker; running headless so no interactive epic selection available'
+        );
+      }
     }
   }
 
