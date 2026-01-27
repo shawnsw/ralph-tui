@@ -26,6 +26,10 @@ import { SettingsView } from './SettingsView.js';
 import { EpicLoaderOverlay } from './EpicLoaderOverlay.js';
 import type { EpicLoaderMode } from './EpicLoaderOverlay.js';
 import { SubagentTreePanel } from './SubagentTreePanel.js';
+import { ParallelProgressView } from './ParallelProgressView.js';
+import { WorkerDetailView } from './WorkerDetailView.js';
+import { MergeProgressView } from './MergeProgressView.js';
+import { ConflictResolutionPanel } from './ConflictResolutionPanel.js';
 import { TabBar } from './TabBar.js';
 import { RemoteConfigView } from './RemoteConfigView.js';
 import type { RemoteConfigData } from './RemoteConfigView.js';
@@ -52,6 +56,12 @@ import { platform } from 'node:os';
 import { writeToClipboard } from '../../utils/index.js';
 import { StreamingOutputParser } from '../output-parser.js';
 import type { FormattedSegment } from '../../plugins/agents/output-formatting.js';
+import type {
+  WorkerDisplayState,
+  MergeOperation,
+  FileConflict,
+  ConflictResolutionResult,
+} from '../../parallel/types.js';
 
 /**
  * View modes for the RunApp component
@@ -60,7 +70,7 @@ import type { FormattedSegment } from '../../plugins/agents/output-formatting.js
  * - 'iteration-detail': Show detailed view of a single iteration
  * Note: Task details are now shown inline in the RightPanel, not as a separate view
  */
-type ViewMode = 'tasks' | 'iterations' | 'iteration-detail';
+type ViewMode = 'tasks' | 'iterations' | 'iteration-detail' | 'parallel-overview' | 'parallel-detail' | 'merge-progress';
 
 /**
  * Focused pane for TAB-based navigation between panels.
@@ -142,6 +152,30 @@ export interface RunAppProps {
     isDirty?: boolean;
     commitHash?: string;
   };
+  /** Whether parallel execution is active */
+  isParallelMode?: boolean;
+  /** Parallel workers state (when parallel mode is active) */
+  parallelWorkers?: WorkerDisplayState[];
+  /** Worker output lines keyed by worker ID */
+  parallelWorkerOutputs?: Map<string, string[]>;
+  /** Merge queue state (when parallel mode is active) */
+  parallelMergeQueue?: MergeOperation[];
+  /** Current parallel group index (0-based) */
+  parallelCurrentGroup?: number;
+  /** Total number of parallel groups */
+  parallelTotalGroups?: number;
+  /** Session backup tag for rollback */
+  parallelSessionBackupTag?: string;
+  /** Active file conflicts during merge (for conflict panel) */
+  parallelConflicts?: FileConflict[];
+  /** Conflict resolution results */
+  parallelConflictResolutions?: ConflictResolutionResult[];
+  /** Task ID of the conflicting merge */
+  parallelConflictTaskId?: string;
+  /** Task title of the conflicting merge */
+  parallelConflictTaskTitle?: string;
+  /** Whether AI conflict resolution is running */
+  parallelAiResolving?: boolean;
 }
 
 /**
@@ -379,6 +413,18 @@ export function RunApp({
   instanceManager,
   initialShowEpicLoader = false,
   localGitInfo,
+  isParallelMode = false,
+  parallelWorkers = [],
+  parallelWorkerOutputs,
+  parallelMergeQueue = [],
+  parallelCurrentGroup = 0,
+  parallelTotalGroups = 0,
+  parallelSessionBackupTag,
+  parallelConflicts = [],
+  parallelConflictResolutions = [],
+  parallelConflictTaskId = '',
+  parallelConflictTaskTitle = '',
+  parallelAiResolving = false,
 }: RunAppProps): ReactNode {
   const { width, height } = useTerminalDimensions();
   const renderer = useRenderer();
@@ -442,6 +488,10 @@ export function RunApp({
   const [editingRemote, setEditingRemote] = useState<ExistingRemoteData | undefined>(undefined);
   // Quit confirmation dialog state
   const [showQuitDialog, setShowQuitDialog] = useState(false);
+  // Parallel mode state
+  const [selectedWorkerIndex, setSelectedWorkerIndex] = useState(0);
+  const [showConflictPanel, setShowConflictPanel] = useState(false);
+  const [conflictSelectedIndex, setConflictSelectedIndex] = useState(0);
   // Show/hide closed tasks filter (default: show closed tasks)
   const [showClosedTasks, setShowClosedTasks] = useState(true);
   // Cache for historical iteration output loaded from disk (taskId -> { output, timing, agent, model })
@@ -1298,6 +1348,24 @@ export function RunApp({
         return;
       }
 
+      // When conflict resolution panel is showing, handle conflict-specific keys
+      if (showConflictPanel) {
+        switch (key.name) {
+          case 'escape':
+            setShowConflictPanel(false);
+            break;
+          case 'j':
+          case 'down':
+            setConflictSelectedIndex((prev) => Math.min(prev + 1, parallelConflicts.length - 1));
+            break;
+          case 'k':
+          case 'up':
+            setConflictSelectedIndex((prev) => Math.max(prev - 1, 0));
+            break;
+        }
+        return;
+      }
+
       switch (key.name) {
         case 'q':
           // Show quit confirmation dialog
@@ -1309,6 +1377,10 @@ export function RunApp({
           if (viewMode === 'iteration-detail') {
             setViewMode('iterations');
             setDetailIteration(null);
+          } else if (viewMode === 'parallel-detail') {
+            setViewMode('parallel-overview');
+          } else if (viewMode === 'parallel-overview' || viewMode === 'merge-progress') {
+            setViewMode('tasks');
           } else {
             // Show quit confirmation dialog
             setShowQuitDialog(true);
@@ -1330,11 +1402,13 @@ export function RunApp({
             navigateSubagentTree(-1);
             break;
           }
-          // Default: navigate task/iteration lists
+          // Default: navigate task/iteration/parallel lists
           if (viewMode === 'tasks') {
             setSelectedIndex((prev) => Math.max(0, prev - 1));
           } else if (viewMode === 'iterations') {
             setIterationSelectedIndex((prev) => Math.max(0, prev - 1));
+          } else if (viewMode === 'parallel-overview') {
+            setSelectedWorkerIndex((prev) => Math.max(0, prev - 1));
           }
           break;
 
@@ -1345,11 +1419,13 @@ export function RunApp({
             navigateSubagentTree(1);
             break;
           }
-          // Default: navigate task/iteration lists
+          // Default: navigate task/iteration/parallel lists
           if (viewMode === 'tasks') {
             setSelectedIndex((prev) => Math.min(displayedTasks.length - 1, prev + 1));
           } else if (viewMode === 'iterations') {
             setIterationSelectedIndex((prev) => Math.min(iterationHistoryLength - 1, prev + 1));
+          } else if (viewMode === 'parallel-overview') {
+            setSelectedWorkerIndex((prev) => Math.min(parallelWorkers.length - 1, prev + 1));
           }
           break;
 
@@ -1398,6 +1474,33 @@ export function RunApp({
           if (viewMode !== 'iteration-detail') {
             setViewMode((prev) => (prev === 'tasks' ? 'iterations' : 'tasks'));
           }
+          break;
+
+        case 'w':
+          // Toggle parallel workers view (only when parallel mode is active)
+          if (isParallelMode) {
+            setViewMode((prev) =>
+              prev === 'parallel-overview' ? 'tasks' : 'parallel-overview'
+            );
+          }
+          break;
+
+        case 'm':
+          // Toggle merge progress view (only when parallel mode is active)
+          if (isParallelMode) {
+            setViewMode((prev) =>
+              prev === 'merge-progress' ? 'tasks' : 'merge-progress'
+            );
+          }
+          break;
+
+        case 'return':
+          // In parallel overview, Enter drills into worker detail
+          if (viewMode === 'parallel-overview' && parallelWorkers.length > 0) {
+            setViewMode('parallel-detail');
+            break;
+          }
+          // Fall through for other views
           break;
 
         case 'd':
@@ -1763,7 +1866,7 @@ export function RunApp({
           break;
       }
     },
-    [displayedTasks, selectedIndex, status, engine, onQuit, viewMode, iterations, iterationSelectedIndex, iterationHistoryLength, onIterationDrillDown, showInterruptDialog, onInterruptConfirm, onInterruptCancel, showHelp, showSettings, showQuitDialog, showEpicLoader, showRemoteManagement, onStart, storedConfig, onSaveSettings, onLoadEpics, subagentDetailLevel, onSubagentPanelVisibilityChange, currentIteration, maxIterations, renderer, detailsViewMode, subagentPanelVisible, focusedPane, navigateSubagentTree, instanceTabs, selectedTabIndex, onSelectTab, isViewingRemote, displayStatus, instanceManager]
+    [displayedTasks, selectedIndex, status, engine, onQuit, viewMode, iterations, iterationSelectedIndex, iterationHistoryLength, onIterationDrillDown, showInterruptDialog, onInterruptConfirm, onInterruptCancel, showHelp, showSettings, showQuitDialog, showEpicLoader, showRemoteManagement, onStart, storedConfig, onSaveSettings, onLoadEpics, subagentDetailLevel, onSubagentPanelVisibilityChange, currentIteration, maxIterations, renderer, detailsViewMode, subagentPanelVisible, focusedPane, navigateSubagentTree, instanceTabs, selectedTabIndex, onSelectTab, isViewingRemote, displayStatus, instanceManager, isParallelMode, parallelWorkers, parallelConflicts, showConflictPanel]
   );
 
   useKeyboard(handleKeyboard);
@@ -2342,6 +2445,33 @@ export function RunApp({
             resolvedSandboxMode={resolvedSandboxMode}
             historicContext={iterationDetailHistoricContext}
           />
+        ) : viewMode === 'parallel-overview' ? (
+          // Parallel workers overview
+          <ParallelProgressView
+            workers={parallelWorkers}
+            mergeQueue={parallelMergeQueue}
+            currentGroup={parallelCurrentGroup}
+            totalGroups={parallelTotalGroups}
+            maxWidth={width}
+            selectedWorkerIndex={selectedWorkerIndex}
+          />
+        ) : viewMode === 'parallel-detail' && parallelWorkers[selectedWorkerIndex] ? (
+          // Single worker detail view
+          <WorkerDetailView
+            worker={parallelWorkers[selectedWorkerIndex]!}
+            workerIndex={selectedWorkerIndex}
+            outputLines={parallelWorkerOutputs?.get(parallelWorkers[selectedWorkerIndex]!.id) ?? []}
+            maxWidth={width}
+            maxHeight={contentHeight}
+          />
+        ) : viewMode === 'merge-progress' ? (
+          // Merge queue progress view
+          <MergeProgressView
+            mergeQueue={parallelMergeQueue}
+            sessionBackupTag={parallelSessionBackupTag}
+            maxWidth={width}
+            maxHeight={contentHeight}
+          />
         ) : viewMode === 'tasks' ? (
           <>
             <LeftPanel
@@ -2517,6 +2647,17 @@ export function RunApp({
 
       {/* Help Overlay */}
       <HelpOverlay visible={showHelp} />
+
+      {/* Conflict Resolution Panel */}
+      <ConflictResolutionPanel
+        visible={showConflictPanel}
+        conflicts={parallelConflicts}
+        resolutions={parallelConflictResolutions}
+        taskId={parallelConflictTaskId}
+        taskTitle={parallelConflictTaskTitle}
+        aiResolving={parallelAiResolving}
+        selectedIndex={conflictSelectedIndex}
+      />
 
       {/* Settings View */}
       {storedConfig && onSaveSettings && (
