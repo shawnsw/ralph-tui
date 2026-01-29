@@ -1570,6 +1570,7 @@ export function RunApp({
           }
           break;
 
+        case 'enter':
         case 'return':
           // In parallel overview, Enter drills into worker detail
           if (viewMode === 'parallel-overview' && parallelWorkers.length > 0) {

@@ -4,9 +4,53 @@
  * resolution, and applies the resolved content. Falls back to rollback on failure.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+/**
+ * Validate that a string is a valid git ref name.
+ * Based on git-check-ref-format rules.
+ * @throws Error if the ref name is invalid
+ */
+function validateGitRef(ref: string, context: string): void {
+  // Empty ref is invalid
+  if (!ref || ref.trim() === '') {
+    throw new Error(`Invalid git ref for ${context}: ref is empty`);
+  }
+  // Cannot contain double dots
+  if (ref.includes('..')) {
+    throw new Error(`Invalid git ref for ${context}: contains '..'`);
+  }
+  // Cannot contain control characters
+  if (/[\x00-\x1f\x7f]/.test(ref)) {
+    throw new Error(`Invalid git ref for ${context}: contains control characters`);
+  }
+  // Cannot start with a dot
+  if (ref.startsWith('.') || ref.includes('/.')) {
+    throw new Error(`Invalid git ref for ${context}: starts with '.'`);
+  }
+  // Cannot end with a dot
+  if (ref.endsWith('.')) {
+    throw new Error(`Invalid git ref for ${context}: ends with '.'`);
+  }
+  // Cannot contain consecutive slashes
+  if (ref.includes('//')) {
+    throw new Error(`Invalid git ref for ${context}: contains consecutive slashes`);
+  }
+  // Cannot end with .lock
+  if (ref.endsWith('.lock')) {
+    throw new Error(`Invalid git ref for ${context}: ends with '.lock'`);
+  }
+  // Cannot contain certain characters
+  if (/[~^:?*\[\\]/.test(ref)) {
+    throw new Error(`Invalid git ref for ${context}: contains invalid characters (~, ^, :, ?, *, [, \\)`);
+  }
+  // Cannot contain @{ sequence (used for reflog)
+  if (ref.includes('@{')) {
+    throw new Error(`Invalid git ref for ${context}: contains '@{' sequence`);
+  }
+}
 import type {
   FileConflict,
   ConflictResolutionResult,
@@ -92,10 +136,10 @@ export class ConflictResolver {
     const results: ConflictResolutionResult[] = [];
 
     // Start the merge again (it was aborted in merge-engine for safety)
+    // Validate the source branch name to prevent issues
+    validateGitRef(operation.sourceBranch, 'sourceBranch');
     try {
-      this.git(
-        `merge --no-commit "${operation.sourceBranch}"`
-      );
+      this.git(['merge', '--no-commit', operation.sourceBranch]);
     } catch {
       // Expected to fail with conflicts — that's the state we want
     }
@@ -132,7 +176,8 @@ export class ConflictResolver {
     const allResolved = results.every((r) => r.success);
     if (allResolved) {
       try {
-        this.git(`commit --no-edit -m "${operation.commitMessage}"`);
+        // Use -m with the message as a separate argument to avoid shell injection
+        this.git(['commit', '--no-edit', '-m', operation.commitMessage]);
 
         this.emit({
           type: 'conflict:resolved',
@@ -185,7 +230,7 @@ export class ConflictResolver {
           // Write resolved content
           const absPath = path.resolve(this.cwd, conflict.filePath);
           fs.writeFileSync(absPath, resolved, 'utf-8');
-          this.git(`add "${conflict.filePath}"`);
+          this.git(['add', conflict.filePath]);
 
           const result: ConflictResolutionResult = {
             filePath: conflict.filePath,
@@ -258,7 +303,7 @@ export class ConflictResolver {
    */
   private gitContent(ref: string): string {
     try {
-      return this.git(`show "${ref}"`);
+      return this.git(['show', ref]);
     } catch {
       return '';
     }
@@ -269,14 +314,15 @@ export class ConflictResolver {
    */
   private abortMerge(operation: MergeOperation): void {
     try {
-      this.git('merge --abort');
+      this.git(['merge', '--abort']);
     } catch {
       // Merge may not be in progress
     }
 
     // Rollback to backup tag
     try {
-      this.git(`reset --hard "${operation.backupTag}"`);
+      validateGitRef(operation.backupTag, 'backupTag');
+      this.git(['reset', '--hard', operation.backupTag]);
     } catch {
       // Best effort rollback
     }
@@ -306,10 +352,11 @@ export class ConflictResolver {
 
   /**
    * Execute a git command in the main repository.
+   * Uses execFileSync with argument array to prevent shell injection.
    * Pipes stdio so git output doesn't bleed through to the TUI.
    */
-  private git(args: string): string {
-    return execSync(`git -C "${this.cwd}" ${args}`, {
+  private git(args: string[]): string {
+    return execFileSync('git', ['-C', this.cwd, ...args], {
       encoding: 'utf-8',
       timeout: 60000,
       stdio: ['pipe', 'pipe', 'pipe'],

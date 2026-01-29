@@ -79,7 +79,7 @@ Ralph checks available disk space before creating worktrees. If free space is be
 
 - **Lower `maxWorkers`** — fewer concurrent worktrees means less disk usage
 - **Clean build artifacts** — ensure `.gitignore` excludes `node_modules/`, `dist/`, etc.
-- **Use shallow worktrees** — ralph creates worktrees from HEAD, not full history
+- **Worktrees share history** — worktrees are created at HEAD and share the repository's object store. They do not perform a shallow clone like `git clone --depth 1`
 
 ## Configuration
 

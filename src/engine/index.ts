@@ -169,6 +169,8 @@ export class ExecutionEngine {
   private currentIterationAgentSwitches: AgentSwitchEntry[] = [];
   /** Forced task for worker mode — engine only works on this one task */
   private forcedTask: TrackerTask | null = null;
+  /** Track if the forced task has been processed (prevents infinite loop on skip/fail) */
+  private forcedTaskProcessed = false;
 
   constructor(config: RalphConfig) {
     this.config = config;
@@ -567,10 +569,10 @@ export class ExecutionEngine {
    * then returns null to stop the engine.
    */
   private async getNextAvailableTask(): Promise<TrackerTask | null> {
-    // Worker mode: return the forced task until it's been completed
+    // Worker mode: return the forced task until it's been processed (completed, skipped, or failed)
     if (this.forcedTask) {
-      if (this.state.tasksCompleted >= 1) {
-        return null; // Task was completed, stop the engine
+      if (this.state.tasksCompleted >= 1 || this.forcedTaskProcessed) {
+        return null; // Task was processed, stop the engine
       }
       return this.forcedTask;
     }
@@ -662,6 +664,10 @@ export class ExecutionEngine {
           this.emitSkipEvent(task, skipReason);
           this.skippedTasks.add(task.id);
           this.retryCountMap.delete(task.id);
+          // Mark forced task as processed to prevent infinite loop
+          if (this.forcedTask?.id === task.id) {
+            this.forcedTaskProcessed = true;
+          }
         }
         break;
       }
@@ -678,6 +684,10 @@ export class ExecutionEngine {
         });
         this.emitSkipEvent(task, errorMessage);
         this.skippedTasks.add(task.id);
+        // Mark forced task as processed to prevent infinite loop
+        if (this.forcedTask?.id === task.id) {
+          this.forcedTaskProcessed = true;
+        }
         break;
       }
 
@@ -691,6 +701,10 @@ export class ExecutionEngine {
           task,
           action: 'abort',
         });
+        // Mark forced task as processed to prevent infinite loop
+        if (this.forcedTask?.id === task.id) {
+          this.forcedTaskProcessed = true;
+        }
         break;
       }
     }

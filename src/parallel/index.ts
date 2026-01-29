@@ -345,18 +345,17 @@ export class ParallelExecutor {
           groupTasksCompleted++;
           this.totalTasksCompleted++;
 
-          // Update tracker (centralized to avoid concurrent writes)
-          try {
-            await this.tracker.completeTask(result.task.id);
-          } catch {
-            // Log but don't fail the merge
-          }
-
-          // Enqueue and process merge
+          // Enqueue and process merge first, only mark complete on successful merge
           this.mergeEngine.enqueue(result);
           const mergeResult = await this.mergeEngine.processNext();
 
           if (mergeResult?.success) {
+            // Merge succeeded - now mark task as complete in tracker
+            try {
+              await this.tracker.completeTask(result.task.id);
+            } catch {
+              // Log but don't fail after successful merge
+            }
             groupMergesCompleted++;
             this.totalMergesCompleted++;
           } else if (mergeResult?.hadConflicts) {
@@ -371,18 +370,27 @@ export class ParallelExecutor {
               const allResolved = resolutions.every((r) => r.success);
 
               if (allResolved) {
+                // Conflict resolution succeeded - now mark task as complete
+                try {
+                  await this.tracker.completeTask(result.task.id);
+                } catch {
+                  // Log but don't fail after successful resolution
+                }
                 this.totalConflictsResolved += resolutions.length;
                 groupMergesCompleted++;
                 this.totalMergesCompleted++;
               } else {
+                // Conflict resolution failed - don't mark task as complete
                 groupMergesFailed++;
                 await this.handleMergeFailure(result);
               }
             } else {
+              // AI conflict resolution disabled - don't mark task as complete
               groupMergesFailed++;
               await this.handleMergeFailure(result);
             }
           } else {
+            // Merge failed - don't mark task as complete
             groupMergesFailed++;
           }
         } else {

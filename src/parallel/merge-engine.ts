@@ -5,7 +5,51 @@
  * rollback via backup tags for safety.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+
+/**
+ * Validate that a string is a valid git ref name.
+ * Based on git-check-ref-format rules.
+ * @throws Error if the ref name is invalid
+ */
+function validateGitRef(ref: string, context: string): void {
+  // Empty ref is invalid
+  if (!ref || ref.trim() === '') {
+    throw new Error(`Invalid git ref for ${context}: ref is empty`);
+  }
+  // Cannot contain double dots
+  if (ref.includes('..')) {
+    throw new Error(`Invalid git ref for ${context}: contains '..'`);
+  }
+  // Cannot contain control characters
+  if (/[\x00-\x1f\x7f]/.test(ref)) {
+    throw new Error(`Invalid git ref for ${context}: contains control characters`);
+  }
+  // Cannot start with a dot
+  if (ref.startsWith('.') || ref.includes('/.')) {
+    throw new Error(`Invalid git ref for ${context}: starts with '.'`);
+  }
+  // Cannot end with a dot
+  if (ref.endsWith('.')) {
+    throw new Error(`Invalid git ref for ${context}: ends with '.'`);
+  }
+  // Cannot contain consecutive slashes
+  if (ref.includes('//')) {
+    throw new Error(`Invalid git ref for ${context}: contains consecutive slashes`);
+  }
+  // Cannot end with .lock
+  if (ref.endsWith('.lock')) {
+    throw new Error(`Invalid git ref for ${context}: ends with '.lock'`);
+  }
+  // Cannot contain certain characters
+  if (/[~^:?*\[\\]/.test(ref)) {
+    throw new Error(`Invalid git ref for ${context}: contains invalid characters (~, ^, :, ?, *, [, \\)`);
+  }
+  // Cannot contain @{ sequence (used for reflog)
+  if (ref.includes('@{')) {
+    throw new Error(`Invalid git ref for ${context}: contains '@{' sequence`);
+  }
+}
 import type {
   MergeOperation,
   MergeResult,
@@ -58,7 +102,8 @@ export class MergeEngine {
    */
   createSessionBackup(sessionId: string): string {
     const tag = `ralph/session-start/${sessionId}`;
-    this.git(`tag "${tag}" HEAD`);
+    validateGitRef(tag, 'sessionBackupTag');
+    this.git(['tag', tag, 'HEAD']);
     this.sessionStartTag = tag;
     return tag;
   }
@@ -157,7 +202,8 @@ export class MergeEngine {
       throw new Error(`Merge operation ${operationId} not found`);
     }
 
-    this.git(`reset --hard "${operation.backupTag}"`);
+    validateGitRef(operation.backupTag, 'backupTag');
+    this.git(['reset', '--hard', operation.backupTag]);
     this.updateStatus(operation, 'rolled-back');
 
     this.emit({
@@ -178,7 +224,8 @@ export class MergeEngine {
       throw new Error('No session start tag available for rollback');
     }
 
-    this.git(`reset --hard "${this.sessionStartTag}"`);
+    validateGitRef(this.sessionStartTag, 'sessionStartTag');
+    this.git(['reset', '--hard', this.sessionStartTag]);
 
     // Mark all completed merges as rolled back
     for (const op of this.queue) {
@@ -194,7 +241,7 @@ export class MergeEngine {
   cleanupTags(): void {
     for (const op of this.queue) {
       try {
-        this.git(`tag -d "${op.backupTag}"`);
+        this.git(['tag', '-d', op.backupTag]);
       } catch {
         // Tag may not exist
       }
@@ -202,7 +249,7 @@ export class MergeEngine {
 
     if (this.sessionStartTag) {
       try {
-        this.git(`tag -d "${this.sessionStartTag}"`);
+        this.git(['tag', '-d', this.sessionStartTag]);
       } catch {
         // Tag may not exist
       }
@@ -238,7 +285,8 @@ export class MergeEngine {
 
     // Create backup tag
     try {
-      this.git(`tag "${operation.backupTag}" HEAD`);
+      validateGitRef(operation.backupTag, 'backupTag');
+      this.git(['tag', operation.backupTag, 'HEAD']);
     } catch (err) {
       const result = this.failMerge(
         operation,
@@ -250,7 +298,8 @@ export class MergeEngine {
 
     // Try fast-forward merge first
     try {
-      this.git(`merge --ff-only "${operation.sourceBranch}"`);
+      validateGitRef(operation.sourceBranch, 'sourceBranch');
+      this.git(['merge', '--ff-only', operation.sourceBranch]);
 
       const filesChanged = this.getFilesChangedCount(operation.backupTag);
       const result = this.completeMerge(
@@ -266,11 +315,10 @@ export class MergeEngine {
 
     // Fall back to merge commit
     try {
-      this.git(
-        `merge --no-edit -m "${operation.commitMessage}" "${operation.sourceBranch}"`
-      );
+      // Use argument array to avoid shell injection with commit message
+      this.git(['merge', '--no-edit', '-m', operation.commitMessage, operation.sourceBranch]);
 
-      const commitSha = this.git('rev-parse --short HEAD').trim();
+      const commitSha = this.git(['rev-parse', '--short', 'HEAD']).trim();
       const filesChanged = this.getFilesChangedCount(operation.backupTag);
       const result = this.completeMerge(
         operation,
@@ -291,10 +339,10 @@ export class MergeEngine {
       this.updateStatus(operation, 'conflicted');
 
       // Abort the merge for now — conflict resolver handles this separately
-      this.git('merge --abort');
+      this.git(['merge', '--abort']);
 
       // Rollback to backup
-      this.git(`reset --hard "${operation.backupTag}"`);
+      this.git(['reset', '--hard', operation.backupTag]);
 
       this.emit({
         type: 'conflict:detected',
@@ -342,7 +390,7 @@ export class MergeEngine {
 
     // Rollback
     try {
-      this.git(`reset --hard "${operation.backupTag}"`);
+      this.git(['reset', '--hard', operation.backupTag]);
     } catch {
       // Best effort rollback
     }
@@ -428,9 +476,8 @@ export class MergeEngine {
    */
   private branchHasCommits(branchName: string): boolean {
     try {
-      const output = this.git(
-        `rev-list --count HEAD.."${branchName}"`
-      );
+      validateGitRef(branchName, 'branchName');
+      const output = this.git(['rev-list', '--count', `HEAD..${branchName}`]);
       return parseInt(output.trim(), 10) > 0;
     } catch {
       return false;
@@ -442,9 +489,8 @@ export class MergeEngine {
    */
   private getFilesChangedCount(fromTag: string): number {
     try {
-      const output = this.git(
-        `diff --name-only "${fromTag}" HEAD`
-      );
+      validateGitRef(fromTag, 'fromTag');
+      const output = this.git(['diff', '--name-only', fromTag, 'HEAD']);
       return output
         .trim()
         .split('\n')
@@ -459,7 +505,7 @@ export class MergeEngine {
    */
   private getConflictedFiles(): string[] {
     try {
-      const output = this.git('status --porcelain');
+      const output = this.git(['status', '--porcelain']);
       const conflicted: string[] = [];
 
       for (const line of output.split('\n')) {
@@ -497,10 +543,11 @@ export class MergeEngine {
 
   /**
    * Execute a git command in the main repository.
+   * Uses execFileSync with argument array to prevent shell injection.
    * Pipes stdio so git output doesn't bleed through to the TUI.
    */
-  private git(args: string): string {
-    return execSync(`git -C "${this.cwd}" ${args}`, {
+  private git(args: string[]): string {
+    return execFileSync('git', ['-C', this.cwd, ...args], {
       encoding: 'utf-8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],

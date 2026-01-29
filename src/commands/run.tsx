@@ -2452,7 +2452,44 @@ export async function executeRunCommand(args: string[]): Promise<void> {
           }
         });
 
-        await parallelExecutor.execute();
+        // Signal handlers for graceful shutdown in parallel headless mode
+        const handleParallelSignal = async (): Promise<void> => {
+          console.log('\n[INFO] [parallel] Received signal, stopping parallel execution...');
+
+          // Stop the parallel executor
+          await parallelExecutor.stop();
+
+          // Reset any in_progress tasks back to open
+          const activeTasks = getActiveTasks(persistedState);
+          if (activeTasks.length > 0) {
+            console.log(`[INFO] [parallel] Resetting ${activeTasks.length} in_progress task(s) to open...`);
+            for (const taskId of activeTasks) {
+              try {
+                await tracker.updateTaskStatus(taskId, 'open');
+              } catch {
+                // Best effort reset
+              }
+            }
+            persistedState = clearActiveTasks(persistedState);
+          }
+
+          // Save interrupted state
+          persistedState = { ...persistedState, status: 'interrupted' };
+          await savePersistedSession(persistedState);
+
+          process.exit(0);
+        };
+
+        process.on('SIGINT', handleParallelSignal);
+        process.on('SIGTERM', handleParallelSignal);
+
+        try {
+          await parallelExecutor.execute();
+        } finally {
+          // Remove handlers after execution completes
+          process.removeListener('SIGINT', handleParallelSignal);
+          process.removeListener('SIGTERM', handleParallelSignal);
+        }
       }
     } else if (config.showTui) {
       // Sequential TUI mode (existing path)

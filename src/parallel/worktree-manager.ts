@@ -5,10 +5,46 @@
  * independently without filesystem conflicts.
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { WorktreeInfo, WorktreeManagerConfig } from './types.js';
+
+/**
+ * Sanitize a task ID into a valid git branch name.
+ * Removes/replaces invalid characters and ensures the result is safe for git.
+ */
+function sanitizeBranchName(taskId: string): string {
+  let sanitized = taskId;
+
+  // Replace spaces and invalid characters with dashes
+  sanitized = sanitized.replace(/[\s~^:?*\[\\@{]/g, '-');
+
+  // Remove control characters
+  sanitized = sanitized.replace(/[\x00-\x1f\x7f]/g, '');
+
+  // Collapse multiple slashes and dashes
+  sanitized = sanitized.replace(/\/+/g, '/').replace(/-+/g, '-');
+
+  // Remove consecutive dots
+  sanitized = sanitized.replace(/\.{2,}/g, '.');
+
+  // Strip leading/trailing slashes, dots, and dashes
+  sanitized = sanitized.replace(/^[./-]+|[./-]+$/g, '');
+
+  // Don't end with .lock
+  if (sanitized.endsWith('.lock')) {
+    sanitized = sanitized.slice(0, -5);
+  }
+
+  // If sanitization resulted in empty string, use a hash of the original
+  if (!sanitized) {
+    // Simple deterministic fallback: use first 8 chars of base64 encoded task ID
+    sanitized = Buffer.from(taskId).toString('base64').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'task';
+  }
+
+  return sanitized;
+}
 
 /** Default minimum free disk space (500 MB) before creating a worktree */
 const DEFAULT_MIN_FREE_DISK_SPACE = 500 * 1024 * 1024;
@@ -58,7 +94,9 @@ export class WorktreeManager {
     await this.checkDiskSpace();
 
     const worktreeId = `worker-${workerId}`;
-    const branchName = `ralph-parallel/${taskId}`;
+    // Sanitize task ID to create a valid git branch name
+    const sanitizedTaskId = sanitizeBranchName(taskId);
+    const branchName = `ralph-parallel/${sanitizedTaskId}`;
     const worktreePath = path.resolve(
       this.config.cwd,
       this.config.worktreeDir,
@@ -72,9 +110,7 @@ export class WorktreeManager {
     await this.cleanupStaleWorktree(worktreePath, branchName);
 
     // Create the worktree with a new branch from HEAD
-    this.git(
-      `worktree add -b "${branchName}" "${worktreePath}" HEAD`
-    );
+    this.git(['worktree', 'add', '-b', branchName, worktreePath, 'HEAD']);
 
     // Copy ralph-tui config into the worktree so the agent has project context
     await this.copyConfig(worktreePath);
@@ -114,7 +150,7 @@ export class WorktreeManager {
     if (!info) return false;
 
     try {
-      const status = this.gitInWorktree(info.path, 'status --porcelain');
+      const status = this.gitInWorktree(info.path, ['status', '--porcelain']);
       const dirty = status.trim().length > 0;
       info.dirty = dirty;
       return dirty;
@@ -146,9 +182,7 @@ export class WorktreeManager {
 
     try {
       // Count commits on the branch that aren't on the main HEAD
-      const log = this.git(
-        `log --oneline "${info.branch}" --not HEAD`
-      );
+      const log = this.git(['log', '--oneline', info.branch, '--not', 'HEAD']);
       return log.trim().split('\n').filter((l) => l.trim()).length;
     } catch {
       return 0;
@@ -199,7 +233,7 @@ export class WorktreeManager {
   private async removeWorktree(info: WorktreeInfo): Promise<void> {
     // Force remove the worktree
     try {
-      this.git(`worktree remove --force "${info.path}"`);
+      this.git(['worktree', 'remove', '--force', info.path]);
     } catch {
       // If git worktree remove fails, try manual cleanup
       if (fs.existsSync(info.path)) {
@@ -207,7 +241,7 @@ export class WorktreeManager {
       }
       // Prune worktree references
       try {
-        this.git('worktree prune');
+        this.git(['worktree', 'prune']);
       } catch {
         // Best effort
       }
@@ -215,7 +249,7 @@ export class WorktreeManager {
 
     // Delete the branch
     try {
-      this.git(`branch -D "${info.branch}"`);
+      this.git(['branch', '-D', info.branch]);
     } catch {
       // Branch may already be deleted
     }
@@ -230,16 +264,16 @@ export class WorktreeManager {
   ): Promise<void> {
     if (fs.existsSync(worktreePath)) {
       try {
-        this.git(`worktree remove --force "${worktreePath}"`);
+        this.git(['worktree', 'remove', '--force', worktreePath]);
       } catch {
         fs.rmSync(worktreePath, { recursive: true, force: true });
-        this.git('worktree prune');
+        this.git(['worktree', 'prune']);
       }
     }
 
     // Also remove the branch if it exists
     try {
-      this.git(`branch -D "${branchName}"`);
+      this.git(['branch', '-D', branchName]);
     } catch {
       // Branch may not exist
     }
@@ -318,23 +352,18 @@ export class WorktreeManager {
 
   /**
    * Check if there is enough disk space to create a worktree.
+   * Uses Node.js fs.statfs() for cross-platform compatibility (macOS, Linux, Windows).
    * @throws If available space is below the minimum threshold
    */
   private async checkDiskSpace(): Promise<void> {
     try {
-      // Use df to check available space on the filesystem
-      const output = execSync(`df -B1 "${this.config.cwd}" | tail -1`, {
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-      });
-      const parts = output.trim().split(/\s+/);
-      // df output: Filesystem 1B-blocks Used Available Use% Mounted
-      const available = parseInt(parts[3], 10);
+      // Use fs.statfs for cross-platform disk space checking
+      const stats = await fs.promises.statfs(this.config.cwd);
+      // bavail = free blocks available to unprivileged user
+      // bsize = block size
+      const available = stats.bavail * stats.bsize;
 
-      if (
-        !isNaN(available) &&
-        available < this.config.minFreeDiskSpace
-      ) {
+      if (available < this.config.minFreeDiskSpace) {
         const availMB = Math.round(available / (1024 * 1024));
         const reqMB = Math.round(this.config.minFreeDiskSpace / (1024 * 1024));
         throw new Error(
@@ -342,23 +371,25 @@ export class WorktreeManager {
         );
       }
     } catch (err) {
-      // If df fails (e.g., on some systems), skip the check rather than blocking
+      // Re-throw insufficient space errors
       if (
         err instanceof Error &&
         err.message.includes('Insufficient disk space')
       ) {
         throw err;
       }
-      // Silently continue if df itself fails
+      // fs.statfs may not be available on older Node versions or some systems
+      // In that case, continue without the check
     }
   }
 
   /**
    * Execute a git command in the main repository.
+   * Uses execFileSync with argument array to prevent shell injection.
    * Pipes stdio so git output (especially stderr) doesn't bleed through to the TUI.
    */
-  private git(args: string): string {
-    return execSync(`git -C "${this.config.cwd}" ${args}`, {
+  private git(args: string[]): string {
+    return execFileSync('git', ['-C', this.config.cwd, ...args], {
       encoding: 'utf-8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -367,10 +398,11 @@ export class WorktreeManager {
 
   /**
    * Execute a git command in a specific worktree.
+   * Uses execFileSync with argument array to prevent shell injection.
    * Pipes stdio so git output doesn't bleed through to the TUI.
    */
-  private gitInWorktree(worktreePath: string, args: string): string {
-    return execSync(`git -C "${worktreePath}" ${args}`, {
+  private gitInWorktree(worktreePath: string, args: string[]): string {
+    return execFileSync('git', ['-C', worktreePath, ...args], {
       encoding: 'utf-8',
       timeout: 30000,
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -27,7 +27,7 @@ related_docs:
 
 When parallel execution activated (via `--parallel` or auto-detection), the TUI never opened. Users saw only console log output:
 
-```
+```text
 Parallel execution enabled: 2 group(s), max parallelism 3
 [12:34:56] [INFO] [parallel] Parallel execution started: 5 tasks, 2 groups, 3 workers
 [12:34:57] [INFO] [worker] Worker w0-0 started: Validate full workflow
@@ -231,7 +231,7 @@ Added all 12 parallel props to `RunAppWrapperProps` and passed them through to `
 
 The `runParallelWithTui()` function establishes a reusable pattern for connecting any event emitter to React rendering:
 
-```
+```text
 Event Source (ParallelExecutor)
   │
   ▼

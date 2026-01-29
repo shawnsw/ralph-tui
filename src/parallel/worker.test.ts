@@ -95,11 +95,11 @@ describe('Worker', () => {
   });
 
   describe('start without initialize', () => {
-    test('throws if initialize() was not called', () => {
+    test('throws if initialize() was not called', async () => {
       const worker = new Worker(workerConfig('w1', mockTask('T1')), 10);
 
       // start() should throw because no engine was initialized
-      expect(worker.start()).rejects.toThrow('not initialized');
+      await expect(worker.start()).rejects.toThrow('not initialized');
     });
   });
 

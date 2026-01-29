@@ -23,7 +23,7 @@ related_files:
 
 Running `bun run dev --tracker beads-rust --cwd /tmp/ralph-tui/` would appear to hang after printing:
 
-```
+```text
 Parallel execution enabled: 1 group(s), max parallelism 15
 error: branch 'ralph-parallel/ralph-tui-12m' not found
 Preparing worktree (new branch 'ralph-parallel/ralph-tui-12m')
@@ -155,7 +155,7 @@ Removed the `!config.showTui` guard so parallel events always log to console.
 
 The `WorkerModeOptions` pattern is reusable anywhere the `ExecutionEngine` needs to run in a constrained context:
 
-```
+```text
 Normal Mode:   Engine → creates tracker → selects tasks → runs loop
 Worker Mode:   Engine → receives tracker → receives task → runs single task
 ```

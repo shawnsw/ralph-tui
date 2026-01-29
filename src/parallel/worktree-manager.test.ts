@@ -54,9 +54,12 @@ describe('WorktreeManager', () => {
       const worktrees = git(repoDir, 'worktree list --porcelain');
       // Force remove any lingering worktrees
       for (const line of worktrees.split('\n')) {
-        if (line.startsWith('worktree ') && !line.includes(repoDir + '\n')) {
+        if (line.startsWith('worktree ')) {
           const wtPath = line.replace('worktree ', '').trim();
-          if (wtPath !== repoDir) {
+          // Compare normalized paths to determine if this is the main repo
+          const normalizedWtPath = path.resolve(wtPath);
+          const normalizedRepoDir = path.resolve(repoDir);
+          if (normalizedWtPath !== normalizedRepoDir) {
             try {
               git(repoDir, `worktree remove --force "${wtPath}"`);
             } catch {
@@ -134,7 +137,7 @@ describe('WorktreeManager', () => {
 
       await smallManager.acquire('w1', 'task-001');
 
-      expect(
+      await expect(
         smallManager.acquire('w2', 'task-002')
       ).rejects.toThrow('Maximum worktrees reached');
     });

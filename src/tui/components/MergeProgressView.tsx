@@ -105,7 +105,7 @@ function MergeOperationRow({
       )}
       {operation.status === 'failed' && operation.error && (
         <text>
-          <span fg={colors.status.error}>  {operation.error.slice(0, maxWidth - 4)}</span>
+          <span fg={colors.status.error}>  {maxWidth > 4 ? operation.error.slice(0, maxWidth - 4) : ''}</span>
         </text>
       )}
     </box>
