@@ -31,7 +31,7 @@ The test workspace is created **outside** the ralph-tui repository to avoid:
 
 You can override this by passing a path to setup:
 ```bash
-./setup-test-workspace.sh /custom/path/to/workspace
+./testing/setup-test-workspace.sh /custom/path/to/workspace
 ```
 
 ### What Gets Shared with Contributors
