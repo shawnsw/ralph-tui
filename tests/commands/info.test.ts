@@ -49,15 +49,18 @@ describe('collectSystemInfo', () => {
 
   beforeAll(async () => {
     // Reset the registry singleton to clear any pollution
-    const { AgentRegistry } = await import('../../src/plugins/agents/registry.js')
+    // @ts-expect-error - Bun supports query strings in imports to get fresh module instances
+    const { AgentRegistry } = await import('../../src/plugins/agents/registry.js?test-reload')
     AgentRegistry.resetInstance()
 
     // Register builtin agents fresh
-    const { registerBuiltinAgents } = await import('../../src/plugins/agents/builtin/index.js')
+    // @ts-expect-error - Bun supports query strings in imports to get fresh module instances
+    const { registerBuiltinAgents } = await import('../../src/plugins/agents/builtin/index.js?test-reload')
     registerBuiltinAgents()
 
     // Import collectSystemInfo so it uses the fresh registry
-    const infoModule = await import('../../src/commands/info.js')
+    // @ts-expect-error - Bun supports query strings in imports to get fresh module instances
+    const infoModule = await import('../../src/commands/info.js?test-reload')
     collectSystemInfo = infoModule.collectSystemInfo
   })
 
