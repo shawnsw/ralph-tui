@@ -12,7 +12,7 @@
  * skill-installer.js at module level.
  */
 
-import { describe, expect, test, beforeEach, afterEach, beforeAll, spyOn, mock } from 'bun:test';
+import { describe, expect, test, beforeEach, afterEach, beforeAll, afterAll, spyOn, mock } from 'bun:test';
 
 // Declare module-level variables for dynamically imported functions
 let executeSkillsCommand: typeof import('./skills.js').executeSkillsCommand;
@@ -51,6 +51,10 @@ beforeAll(async () => {
   parseInstallArgs = skillsModule.parseInstallArgs;
   buildAddSkillArgs = skillsModule.buildAddSkillArgs;
   parseAddSkillOutput = skillsModule.parseAddSkillOutput;
+});
+
+afterAll(() => {
+  mock.restore();
 });
 
 describe('printSkillsHelp', () => {
