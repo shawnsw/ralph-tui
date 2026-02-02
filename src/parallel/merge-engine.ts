@@ -25,9 +25,12 @@ function validateGitRef(ref: string, context: string): void {
   if (ref.includes('..')) {
     throw new Error(`Invalid git ref for ${context}: contains '..'`);
   }
-  // Cannot contain control characters
-  if (/[\x00-\x1f\x7f]/.test(ref)) {
-    throw new Error(`Invalid git ref for ${context}: contains control characters`);
+  // Cannot contain control characters (use char code scan instead of regex for lint compliance)
+  for (let i = 0; i < ref.length; i++) {
+    const code = ref.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      throw new Error(`Invalid git ref for ${context}: contains control characters`);
+    }
   }
   // Cannot start with a dot
   if (ref.startsWith('.') || ref.includes('/.')) {

@@ -1411,12 +1411,16 @@ async function runParallelWithTui(
         parallelState.currentGroup = event.groupIndex;
         break;
 
-      case 'worker:created':
+      case 'worker:created': {
         // Worker created but not yet started — refresh from executor
         parallelState.workers = parallelExecutor.getWorkerStates();
         // Record task→worker mapping for output routing in the TUI
-        parallelState.taskIdToWorkerId.set(event.task.id, event.workerId);
+        // Create new Map so React's memoization detects the change
+        const newTaskMap = new Map(parallelState.taskIdToWorkerId);
+        newTaskMap.set(event.task.id, event.workerId);
+        parallelState.taskIdToWorkerId = newTaskMap;
         break;
+      }
 
       case 'worker:started':
         // Refresh workers from executor state

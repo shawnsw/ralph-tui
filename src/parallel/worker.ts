@@ -140,6 +140,34 @@ export class Worker {
     try {
       await this.engine.start();
 
+      // Check if we were cancelled while the engine was running.
+      // stop() may have been called concurrently, setting this.status = 'cancelled'.
+      // Use getStatus() to bypass TypeScript's type narrowing (it thinks status is still 'running').
+      if (this.getStatus() === 'cancelled') {
+        const result: WorkerResult = {
+          workerId: this.id,
+          task: this.config.task,
+          success: false,
+          iterationsRun: this.currentIteration,
+          taskCompleted: false,
+          durationMs: Date.now() - this.startTime,
+          error: 'Worker was cancelled',
+          branchName: this.config.branchName,
+          commitCount: 0,
+          worktreePath: this.config.worktreePath,
+        };
+
+        this.emitParallel({
+          type: 'worker:failed',
+          timestamp: new Date().toISOString(),
+          workerId: this.id,
+          task: this.config.task,
+          error: 'Worker was cancelled',
+        });
+
+        return result;
+      }
+
       const engineState = this.engine.getState();
       const taskCompleted = engineState.tasksCompleted > 0;
 
