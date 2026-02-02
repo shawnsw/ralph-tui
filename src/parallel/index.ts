@@ -179,8 +179,10 @@ export class ParallelExecutor {
     this.startedAt = new Date().toISOString();
     this.status = 'analyzing';
 
-    // Initialize debug logging
-    initDebugLog(this.config.cwd);
+    // Initialize debug logging only when --debug flag is passed
+    if (this.config.debug) {
+      initDebugLog(this.config.cwd);
+    }
     debugLog('EXECUTOR', 'Parallel execution started', {
       cwd: this.config.cwd,
       maxWorkers: this.config.maxWorkers,
