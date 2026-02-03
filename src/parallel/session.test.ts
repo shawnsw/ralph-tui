@@ -359,6 +359,6 @@ describe('cleanupOrphanedWorktrees', () => {
     // The directory should be removed by the fallback
     expect(fs.existsSync(fakeWorktree)).toBe(false);
     // Either cleaned or error depending on git worktree prune behavior
-    expect(result.cleaned + result.errors.length).toBeGreaterThanOrEqual(0);
+    expect(result.cleaned > 0 || result.errors.length > 0).toBe(true);
   });
 });

@@ -8,7 +8,11 @@
 
 import { describe, test, expect } from 'bun:test';
 import { analyzeTaskGraph, shouldRunParallel } from './task-graph.js';
-import type { TrackerTask } from '../plugins/trackers/types.js';
+import { ParallelExecutor } from './index.js';
+import type { TrackerTask, TrackerPlugin } from '../plugins/trackers/types.js';
+import type { RalphConfig } from '../config/types.js';
+import type { ParallelEvent } from './events.js';
+import type { AiResolverCallback } from './conflict-resolver.js';
 
 /**
  * Helper to create a minimal TrackerTask.
@@ -116,6 +120,211 @@ describe('ParallelExecutor planning logic', () => {
       expect(batches[0]).toHaveLength(3);
       expect(batches[1]).toHaveLength(3);
       expect(batches[2]).toHaveLength(1);
+    });
+  });
+});
+
+/** Create a minimal mock tracker for testing */
+function createMockTracker(): TrackerPlugin {
+  return {
+    meta: {
+      id: 'mock-tracker',
+      name: 'Mock Tracker',
+      description: 'A mock tracker for testing',
+      version: '1.0.0',
+      supportsBidirectionalSync: false,
+      supportsHierarchy: false,
+      supportsDependencies: true,
+    },
+    initialize: async () => {},
+    isReady: async () => true,
+    getTasks: async () => [],
+    getTask: async () => undefined,
+    getNextTask: async () => undefined,
+    completeTask: async () => ({ success: true, message: 'Task completed' }),
+    updateTaskStatus: async () => undefined,
+    isComplete: async () => true,
+    sync: async () => ({ success: true, message: 'Synced', syncedAt: new Date().toISOString() }),
+    isTaskReady: async () => true,
+    getEpics: async () => [],
+    getSetupQuestions: () => [],
+    validateSetup: async () => null,
+    dispose: async () => {},
+    getTemplate: () => 'Mock template',
+  };
+}
+
+/** Create a minimal RalphConfig for testing */
+function createMockConfig(): RalphConfig {
+  return {
+    cwd: '/tmp/test-project',
+    maxIterations: 5,
+    iterationDelay: 100,
+    outputDir: '/tmp/output',
+    progressFile: '/tmp/progress.md',
+    sessionId: 'test-session',
+    agent: { name: 'test-agent', plugin: 'claude', options: {} },
+    tracker: { name: 'test-tracker', plugin: 'beads', options: {} },
+    showTui: false,
+    errorHandling: {
+      strategy: 'skip',
+      maxRetries: 3,
+      retryDelayMs: 1000,
+      continueOnNonZeroExit: false,
+    },
+  };
+}
+
+describe('ParallelExecutor class', () => {
+  describe('constructor', () => {
+    test('creates instance with config and tracker', () => {
+      const config = createMockConfig();
+      const tracker = createMockTracker();
+
+      const executor = new ParallelExecutor(config, tracker);
+
+      expect(executor).toBeInstanceOf(ParallelExecutor);
+    });
+
+    test('accepts partial parallel config overrides', () => {
+      const config = createMockConfig();
+      const tracker = createMockTracker();
+
+      const executor = new ParallelExecutor(config, tracker, {
+        maxWorkers: 5,
+        aiConflictResolution: false,
+      });
+
+      expect(executor).toBeInstanceOf(ParallelExecutor);
+    });
+  });
+
+  describe('on (event listener)', () => {
+    test('returns an unsubscribe function', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+      const events: ParallelEvent[] = [];
+
+      const unsub = executor.on((e) => events.push(e));
+
+      expect(typeof unsub).toBe('function');
+    });
+
+    test('unsubscribe removes the listener', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const unsub = executor.on(() => {});
+      unsub();
+
+      // Should not throw on double unsubscribe
+      unsub();
+    });
+  });
+
+  describe('onEngineEvent', () => {
+    test('returns an unsubscribe function', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const unsub = executor.onEngineEvent(() => {});
+
+      expect(typeof unsub).toBe('function');
+    });
+
+    test('unsubscribe removes the listener', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const unsub = executor.onEngineEvent(() => {});
+      unsub();
+
+      // Should not throw on double unsubscribe
+      unsub();
+    });
+  });
+
+  describe('setAiResolver', () => {
+    test('accepts a resolver callback', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+      const resolver: AiResolverCallback = async () => null;
+
+      // Should not throw
+      executor.setAiResolver(resolver);
+    });
+  });
+
+  describe('reset', () => {
+    test('resets internal state', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      // Call reset
+      executor.reset();
+
+      // Verify state is reset via getState()
+      const state = executor.getState();
+      expect(state.status).toBe('idle');
+      expect(state.currentGroupIndex).toBe(0);
+      expect(state.totalTasksCompleted).toBe(0);
+      expect(state.workers).toHaveLength(0);
+    });
+  });
+
+  describe('getState', () => {
+    test('returns initial state', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const state = executor.getState();
+
+      expect(state.status).toBe('idle');
+      expect(state.taskGraph).toBeNull();
+      expect(state.currentGroupIndex).toBe(0);
+      expect(state.totalGroups).toBe(0);
+      expect(state.workers).toEqual([]);
+      expect(state.mergeQueue).toEqual([]);
+      expect(state.completedMerges).toEqual([]);
+      expect(state.activeConflicts).toEqual([]);
+      expect(state.totalTasksCompleted).toBe(0);
+      expect(state.totalTasks).toBe(0);
+      expect(state.startedAt).toBeNull();
+      expect(state.elapsedMs).toBe(0);
+    });
+  });
+
+  describe('getWorkerStates', () => {
+    test('returns empty array when no workers', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const states = executor.getWorkerStates();
+
+      expect(states).toEqual([]);
+    });
+  });
+
+  describe('stop', () => {
+    test('can be called when idle', async () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      // Should not throw when stopped while idle
+      await executor.stop();
+
+      expect(executor.getState().status).toBe('interrupted');
+    });
+  });
+
+  describe('getSessionBranch', () => {
+    test('returns null when no session branch created', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const branch = executor.getSessionBranch();
+
+      expect(branch).toBeNull();
+    });
+  });
+
+  describe('getOriginalBranch', () => {
+    test('returns null when no session branch created', () => {
+      const executor = new ParallelExecutor(createMockConfig(), createMockTracker());
+
+      const branch = executor.getOriginalBranch();
+
+      expect(branch).toBeNull();
     });
   });
 });
