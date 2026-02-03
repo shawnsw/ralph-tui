@@ -1,14 +1,12 @@
 /**
  * ABOUTME: Tests for BaseAgentPlugin execute lifecycle and envExclude functionality.
- * Uses Bun.spawn directly in test plugins to bypass node:child_process mock pollution.
  *
- * ISOLATION FIX: This test file creates test plugins that override execute() to use
- * Bun.spawn directly, bypassing the BaseAgentPlugin.execute() method which uses
- * node:child_process.spawn. This prevents mock pollution from other test files.
+ * This test file creates test plugins that override BaseAgentPlugin.execute() to call
+ * Bun.spawn directly instead of node:child_process.spawn. This isolation is necessary
+ * because Bun's mock.restore() does not reliably restore builtin modules, and other
+ * test files mock node:child_process at the module level.
  *
- * The original tests in src/plugins/agents/base.test.ts fail in the full test suite
- * because other tests mock node:child_process and Bun's mock.restore() doesn't properly
- * restore builtin modules (see https://github.com/oven-sh/bun/issues/7823).
+ * See: https://github.com/oven-sh/bun/issues/7823
  */
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
@@ -85,71 +83,92 @@ class BunSpawnTestPlugin extends BaseAgentPlugin {
     });
 
     const runExecution = async (): Promise<void> => {
-      options?.onStart?.(executionId);
-
-      const proc = Bun.spawn([command, ...args], {
-        cwd: options?.cwd ?? process.cwd(),
-        stdout: 'pipe',
-        stderr: 'pipe',
-      });
-
       let stdout = '';
       let stderr = '';
 
-      const stdoutReader = proc.stdout.getReader();
-      const stderrReader = proc.stderr.getReader();
+      try {
+        options?.onStart?.(executionId);
 
-      const readStream = async (
-        reader: ReadableStreamDefaultReader<Uint8Array>,
-        callback?: (data: string) => void
-      ): Promise<string> => {
-        let result = '';
-        const decoder = new TextDecoder();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const text = decoder.decode(value);
-          result += text;
-          callback?.(text);
-        }
-        return result;
-      };
+        const proc = Bun.spawn([command, ...args], {
+          cwd: options?.cwd ?? process.cwd(),
+          stdout: 'pipe',
+          stderr: 'pipe',
+        });
 
-      const [stdoutResult, stderrResult] = await Promise.all([
-        readStream(stdoutReader, options?.onStdout),
-        readStream(stderrReader, options?.onStderr),
-      ]);
+        const stdoutReader = proc.stdout.getReader();
+        const stderrReader = proc.stderr.getReader();
 
-      stdout = stdoutResult;
-      stderr = stderrResult;
+        const readStream = async (
+          reader: ReadableStreamDefaultReader<Uint8Array>,
+          callback?: (data: string) => void
+        ): Promise<string> => {
+          let result = '';
+          const decoder = new TextDecoder();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const text = decoder.decode(value);
+            result += text;
+            callback?.(text);
+          }
+          return result;
+        };
 
-      const exitCode = await proc.exited;
-      const endedAt = new Date();
+        const [stdoutResult, stderrResult] = await Promise.all([
+          readStream(stdoutReader, options?.onStdout),
+          readStream(stderrReader, options?.onStderr),
+        ]);
 
-      const status: AgentExecutionStatus =
-        exitCode === 0 ? 'completed' : 'failed';
+        stdout = stdoutResult;
+        stderr = stderrResult;
 
-      const result: AgentExecutionResult = {
-        executionId,
-        status,
-        exitCode,
-        stdout,
-        stderr,
-        durationMs: endedAt.getTime() - startedAt.getTime(),
-        interrupted: false,
-        startedAt: startedAt.toISOString(),
-        endedAt: endedAt.toISOString(),
-      };
+        const exitCode = await proc.exited;
+        const endedAt = new Date();
 
-      if (options?.onEnd) {
+        const status: AgentExecutionStatus =
+          exitCode === 0 ? 'completed' : 'failed';
+
+        const result: AgentExecutionResult = {
+          executionId,
+          status,
+          exitCode,
+          stdout,
+          stderr,
+          durationMs: endedAt.getTime() - startedAt.getTime(),
+          interrupted: false,
+          startedAt: startedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+        };
+
         try {
-          options.onEnd(result);
+          options?.onEnd?.(result);
         } catch {
-          // Swallow error
+          // Swallow onEnd errors
         }
-      }
 
-      resolvePromise!(result);
+        resolvePromise!(result);
+      } catch (error) {
+        const endedAt = new Date();
+        const result: AgentExecutionResult = {
+          executionId,
+          status: 'failed',
+          exitCode: 1,
+          stdout,
+          stderr,
+          durationMs: endedAt.getTime() - startedAt.getTime(),
+          interrupted: false,
+          startedAt: startedAt.toISOString(),
+          endedAt: endedAt.toISOString(),
+        };
+
+        try {
+          options?.onEnd?.(result);
+        } catch {
+          // Swallow onEnd errors
+        }
+
+        resolvePromise!(result);
+      }
     };
 
     void runExecution();

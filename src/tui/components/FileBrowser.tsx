@@ -34,6 +34,9 @@ export interface FileBrowserProps {
   /** File pattern hint text (e.g., 'prd*.json') - derived from filenamePrefix and fileExtension if not provided */
   filePatternHint?: string;
 
+  /** External error message to display (e.g., PRD load failure) */
+  errorMessage?: string;
+
   /** Callback when a file is selected */
   onSelect: (path: string) => void;
 
@@ -73,6 +76,7 @@ export function FileBrowser({
   filenamePrefix,
   trackerLabel,
   filePatternHint,
+  errorMessage,
   onSelect,
   onCancel,
 }: FileBrowserProps): ReactNode {
@@ -85,6 +89,9 @@ export function FileBrowser({
   const [editingPath, setEditingPath] = useState(false);
   const [editedPath, setEditedPath] = useState('');
   const scrollboxRef = useRef<ScrollBoxRenderable>(null);
+
+  // Combine internal error with external errorMessage
+  const displayError = error || errorMessage || null;
 
   // Load directory contents when path or showHidden changes
   useEffect(() => {
@@ -119,12 +126,14 @@ export function FileBrowser({
       setCurrentPath(initialPath ?? process.cwd());
       setSelectedIndex(0);
       setShowHidden(false);
+      setEditingPath(false);
+      setEditedPath('');
     }
   }, [visible, initialPath]);
 
   // Scroll to keep selected item in view (only when it goes out of the visible area)
   useEffect(() => {
-    if (scrollboxRef.current && !loading && !error) {
+    if (scrollboxRef.current && !loading && !displayError) {
       const itemHeight = 1;
       const visibleRows = 10;
       const itemTop = selectedIndex * itemHeight;
@@ -140,7 +149,7 @@ export function FileBrowser({
         scrollboxRef.current.scrollTop = itemTop;
       }
     }
-  }, [selectedIndex, loading, error]);
+  }, [selectedIndex, loading, displayError]);
 
   // Navigate to parent directory
   const goToParent = useCallback(() => {
@@ -384,7 +393,7 @@ export function FileBrowser({
           >
             <text fg={colors.fg.secondary}>Loading...</text>
           </box>
-        ) : error ? (
+        ) : displayError ? (
           <box
             style={{
               flexGrow: 1,
@@ -393,7 +402,7 @@ export function FileBrowser({
               alignItems: 'center',
             }}
           >
-            <text fg={colors.status.error}>Error: {truncateText(error, 60)}</text>
+            <text fg={colors.status.error}>Error: {truncateText(displayError, 60)}</text>
             <box style={{ height: 1 }} />
             <text fg={colors.fg.muted}>Press Backspace to go back</text>
           </box>

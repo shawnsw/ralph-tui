@@ -311,9 +311,10 @@ describe('BaseAgentPlugin', () => {
 
 /**
  * Tests for BaseAgentPlugin execute lifecycle (onStdout, onEnd, onStart callbacks)
- * and envExclude functionality that require real process execution have been moved
- * to tests/plugins/agents/base-execute.test.ts to avoid mock pollution from other
- * test files that mock node:child_process.
+ * and envExclude functionality that require real process execution are located in
+ * tests/plugins/agents/base-execute.test.ts. Those tests use Bun.spawn directly
+ * to avoid mock pollution from test files that mock node:child_process, because
+ * Bun's mock.restore() does not reliably restore builtin modules.
  *
  * See: https://github.com/oven-sh/bun/issues/7823
  */

@@ -2,13 +2,14 @@
  * ABOUTME: Tests for the auto-commit utility module.
  * Verifies git staging/commit behavior after task completion using real temporary git repos.
  *
- * ISOLATION FIX: This test file uses Bun.spawn directly for ALL git operations to bypass
- * any node:child_process mocks from other test files. Bun's mock.restore() does not
- * properly restore builtin modules (see https://github.com/oven-sh/bun/issues/7823).
+ * This test file uses Bun.spawn directly for all git operations to avoid mock pollution
+ * from other test files. Bun's mock.restore() does not reliably restore builtin modules.
+ * See: https://github.com/oven-sh/bun/issues/7823
  *
- * The functions under test are re-implemented locally using Bun.spawn to test the same
- * logic without depending on the potentially-mocked node:child_process. This matches
- * the approach used in tests/utils/process.test.ts (see US-1).
+ * TODO: The functions hasUncommittedChanges and performAutoCommit are re-implemented
+ * locally using Bun.spawn. Once Bun fixes module mock restoration, these should be
+ * replaced with imports from src/engine/auto-commit.ts to ensure tests stay in sync
+ * with the production implementation.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
@@ -108,15 +109,22 @@ async function performAutoCommit(
 }
 
 async function initGitRepo(dir: string): Promise<void> {
-  await runProcess('git', ['init'], dir);
-  await runProcess('git', ['config', 'user.email', 'test@test.com'], dir);
-  await runProcess('git', ['config', 'user.name', 'Test'], dir);
+  const runOrFail = async (args: string[], description: string): Promise<void> => {
+    const result = await runProcess('git', args, dir);
+    if (!result.success) {
+      throw new Error(`${description} failed (exit ${result.exitCode}): ${result.stderr}`);
+    }
+  };
+
+  await runOrFail(['init'], 'git init');
+  await runOrFail(['config', 'user.email', 'test@test.com'], 'git config user.email');
+  await runOrFail(['config', 'user.name', 'Test'], 'git config user.name');
   // Disable hooks to avoid interference from global git config
-  await runProcess('git', ['config', 'core.hooksPath', '/dev/null'], dir);
+  await runOrFail(['config', 'core.hooksPath', '/dev/null'], 'git config core.hooksPath');
   // Create initial commit so HEAD exists
   await writeFile(join(dir, '.gitkeep'), '');
-  await runProcess('git', ['add', '-A'], dir);
-  await runProcess('git', ['commit', '-m', 'Internal: initial'], dir);
+  await runOrFail(['add', '-A'], 'git add');
+  await runOrFail(['commit', '-m', 'Internal: initial'], 'git commit');
 }
 
 beforeEach(async () => {

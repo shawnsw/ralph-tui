@@ -2,9 +2,9 @@
  * ABOUTME: Tests for the Beads tracker plugin, focusing on task completion and PRD context.
  * Uses Bun's mock.module to mock child_process.spawn and fs/promises.
  *
- * IMPORTANT: The mock is set up in beforeAll (not at module level) to prevent
- * polluting other test files. The module under test is dynamically imported
- * after the mock is applied.
+ * The mock is configured in beforeAll (not at module scope) to avoid polluting
+ * other test files. The module under test is dynamically imported only once
+ * the mock is in place, ensuring isolation.
  */
 
 import { describe, test, expect, mock, beforeEach, beforeAll, afterAll } from 'bun:test';

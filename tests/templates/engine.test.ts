@@ -704,11 +704,17 @@ describe('Template Engine - Installation', () => {
     let freshInstallBuiltinTemplates: typeof installBuiltinTemplates;
     let testDir: string;
     let originalHome: string | undefined;
+    let originalUserProfile: string | undefined;
 
     beforeEach(async () => {
       testDir = await createTestDir();
       originalHome = process.env.HOME;
+      originalUserProfile = process.env.USERPROFILE;
       process.env.HOME = testDir;
+      // On Windows, os.homedir() uses USERPROFILE, so set it as well
+      if (process.platform === 'win32') {
+        process.env.USERPROFILE = testDir;
+      }
     });
 
     afterEach(async () => {
@@ -716,6 +722,11 @@ describe('Template Engine - Installation', () => {
         delete process.env.HOME;
       } else {
         process.env.HOME = originalHome;
+      }
+      if (originalUserProfile === undefined) {
+        delete process.env.USERPROFILE;
+      } else {
+        process.env.USERPROFILE = originalUserProfile;
       }
       await cleanupTestDir(testDir);
     });

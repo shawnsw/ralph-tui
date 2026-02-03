@@ -2,9 +2,9 @@
  * ABOUTME: Tests for installViaAddSkill subprocess spawning.
  * Uses mock.module to mock node:child_process spawn for unit testing.
  *
- * IMPORTANT: The mock is set up in beforeAll (not at module level) to prevent
- * polluting other test files. The module under test is dynamically imported
- * after the mock is applied.
+ * The mock is configured in beforeAll (not at module scope) to avoid polluting
+ * other test files. The module under test is dynamically imported only once
+ * the mock is in place, ensuring isolation.
  */
 
 import { describe, test, expect, mock, beforeEach, beforeAll, afterAll } from 'bun:test';

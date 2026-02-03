@@ -185,6 +185,7 @@ export function EpicLoaderOverlay({
         fileExtension=".json"
         filenamePrefix="prd"
         trackerLabel={trackerName}
+        errorMessage={error}
         onSelect={onFilePath}
         onCancel={onCancel}
       />
