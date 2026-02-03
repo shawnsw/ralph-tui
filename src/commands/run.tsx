@@ -379,7 +379,8 @@ export function parseRunArgs(args: string[]): ExtendedRuntimeOptions {
         break;
 
       case '--task-range':
-        if (nextArg && !nextArg.startsWith('-')) {
+        // Allow nextArg if it exists and either doesn't start with '-' OR matches a negative-integer pattern (e.g., "-10")
+        if (nextArg && (!nextArg.startsWith('-') || /^-\d+$/.test(nextArg))) {
           const range = nextArg;
           // Parse range formats: "1-5", "3-", "-10", "5"
           if (range.includes('-')) {

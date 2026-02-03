@@ -367,7 +367,7 @@ export class RemoteServer {
         self.handleMessage(ws, clientState, message.toString());
       },
 
-      close(ws: ServerWebSocket<WebSocketData>) {
+      async close(ws: ServerWebSocket<WebSocketData>) {
         const clientState = self.clients.get(ws);
         if (clientState) {
           // Revoke any connection tokens for this client
@@ -376,7 +376,9 @@ export class RemoteServer {
 
           // Stop orchestration if this client started it (prevent resource leak)
           if (self.orchestrationSession?.clientId === clientId) {
-            self.orchestrationSession.executor.stop().catch(() => {
+            // Await stop() to ensure cleanup completes before unsubscribing
+            // (matches the handleOrchestrateStop pattern)
+            await self.orchestrationSession.executor.stop().catch(() => {
               // Ignore errors during cleanup
             });
             self.orchestrationSession.unsubscribe();
