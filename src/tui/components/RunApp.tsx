@@ -2390,10 +2390,22 @@ export function RunApp({
   useEffect(() => {
     if (!cwd || !effectiveTaskId) return;
 
-    // Don't load for actively running iterations (they're streaming live output)
-    // But DO load for active tasks - they may have resumed and need historical data as fallback
+    // Check if we should load historical data
+    // Don't load for currently running iterations
     const isRunning = selectedIteration?.status === 'running';
     if (isRunning) return;
+
+    // Don't load historical data when viewing the currently executing task from tasks view
+    // (no iteration selected). Live output should be shown instead of stale disk data.
+    const isCurrentlyExecutingTask = selectedTask?.id === currentTaskId && selectedTask?.status === 'active';
+    const isTasksView = !selectedIteration;
+    if (isCurrentlyExecutingTask && isTasksView) return;
+
+    // For active tasks, only load historical if no current iteration yet (resume scenario)
+    // This allows showing previous output when resuming an in-progress task
+    const isActiveTask = selectedTask?.status === 'active';
+    const hasCurrentIteration = iterations.some(i => i.task.id === effectiveTaskId);
+    if (isActiveTask && hasCurrentIteration) return;
 
     // Check if already in cache
     const hasInCache = historicalOutputCache.has(effectiveTaskId);
