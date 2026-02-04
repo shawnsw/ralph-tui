@@ -978,6 +978,8 @@ interface RunAppWrapperProps {
   parallelConflictTaskTitle?: string;
   /** Whether AI conflict resolution is running */
   parallelAiResolving?: boolean;
+  /** The file currently being resolved by AI */
+  parallelCurrentlyResolvingFile?: string;
   /** Maps task IDs to worker IDs for output routing in parallel mode */
   parallelTaskIdToWorkerId?: Map<string, string>;
   /** Task IDs that completed locally but merge failed (shows ⚠ in TUI) */
@@ -1039,6 +1041,7 @@ function RunAppWrapper({
   parallelConflictTaskId,
   parallelConflictTaskTitle,
   parallelAiResolving,
+  parallelCurrentlyResolvingFile,
   parallelTaskIdToWorkerId,
   parallelCompletedLocallyTaskIds,
   parallelAutoCommitSkippedTaskIds,
@@ -1239,6 +1242,7 @@ function RunAppWrapper({
       parallelConflictTaskId={parallelConflictTaskId}
       parallelConflictTaskTitle={parallelConflictTaskTitle}
       parallelAiResolving={parallelAiResolving}
+      parallelCurrentlyResolvingFile={parallelCurrentlyResolvingFile}
       parallelTaskIdToWorkerId={parallelTaskIdToWorkerId}
       parallelCompletedLocallyTaskIds={parallelCompletedLocallyTaskIds}
       parallelAutoCommitSkippedTaskIds={parallelAutoCommitSkippedTaskIds}
@@ -1557,6 +1561,8 @@ async function runParallelWithTui(
     conflictTaskId: '',
     conflictTaskTitle: '',
     aiResolving: false,
+    /** The file currently being resolved by AI */
+    currentlyResolvingFile: '' as string,
     /** Maps task IDs to their assigned worker IDs for output routing */
     taskIdToWorkerId: new Map<string, string>(),
     /** Task IDs that completed locally but merge failed (shows ⚠ in TUI) */
@@ -1708,15 +1714,18 @@ async function runParallelWithTui(
 
       case 'conflict:ai-resolving':
         parallelState.aiResolving = true;
+        parallelState.currentlyResolvingFile = event.filePath;
         break;
 
       case 'conflict:ai-resolved':
         parallelState.aiResolving = false;
+        parallelState.currentlyResolvingFile = '';
         parallelState.conflictResolutions = [...parallelState.conflictResolutions, event.result];
         break;
 
       case 'conflict:ai-failed':
         parallelState.aiResolving = false;
+        parallelState.currentlyResolvingFile = '';
         break;
 
       case 'conflict:resolved':
@@ -1725,6 +1734,7 @@ async function runParallelWithTui(
         parallelState.conflictTaskId = '';
         parallelState.conflictTaskTitle = '';
         parallelState.aiResolving = false;
+        parallelState.currentlyResolvingFile = '';
         break;
 
       case 'parallel:completed':
@@ -1852,6 +1862,7 @@ async function runParallelWithTui(
         parallelConflictTaskId={parallelState.conflictTaskId}
         parallelConflictTaskTitle={parallelState.conflictTaskTitle}
         parallelAiResolving={parallelState.aiResolving}
+        parallelCurrentlyResolvingFile={parallelState.currentlyResolvingFile}
         parallelTaskIdToWorkerId={parallelState.taskIdToWorkerId}
         parallelCompletedLocallyTaskIds={parallelState.completedLocallyTaskIds}
         parallelAutoCommitSkippedTaskIds={parallelState.autoCommitSkippedTaskIds}

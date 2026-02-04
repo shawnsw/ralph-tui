@@ -6,12 +6,18 @@
  */
 
 import type { ReactNode } from 'react';
-import { memo } from 'react';
+import { memo, useState, useEffect } from 'react';
 import { createTextAttributes } from '@opentui/core';
 import { colors, statusIndicators } from '../theme.js';
 import type { FileConflict, ConflictResolutionResult } from '../../parallel/types.js';
 
 const boldAttr = createTextAttributes({ bold: true });
+
+/** Spinner frames for animation */
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+/** Maximum number of files to show before scrolling */
+const MAX_VISIBLE_FILES = 10;
 
 export interface ConflictResolutionPanelProps {
   /** Whether the overlay is visible */
@@ -26,6 +32,8 @@ export interface ConflictResolutionPanelProps {
   taskTitle: string;
   /** Whether AI resolution is currently running */
   aiResolving: boolean;
+  /** The file currently being resolved by AI */
+  currentlyResolvingFile?: string;
   /** Index of the file currently selected */
   selectedIndex: number;
   /** Callback when user requests retry (r key) */
@@ -38,6 +46,11 @@ export interface ConflictResolutionPanelProps {
  * Resolution state for determining which controls to show.
  */
 type ResolutionState = 'in-progress' | 'all-resolved' | 'has-failures' | 'waiting';
+
+/**
+ * Per-file status for display.
+ */
+type FileStatus = 'resolved' | 'failed' | 'resolving' | 'pending';
 
 /**
  * Determine the overall resolution state.
@@ -76,35 +89,52 @@ function getResolutionState(
 function getFileStatus(
   filePath: string,
   resolutions: ConflictResolutionResult[],
-  aiResolving: boolean,
-): { indicator: string; color: string; label: string } {
+  currentlyResolvingFile?: string,
+): FileStatus {
   const resolution = resolutions.find((r) => r.filePath === filePath);
   if (resolution) {
-    if (resolution.success) {
+    return resolution.success ? 'resolved' : 'failed';
+  }
+  if (currentlyResolvingFile === filePath) {
+    return 'resolving';
+  }
+  return 'pending';
+}
+
+/**
+ * Get display properties for a file status.
+ */
+function getFileStatusDisplay(
+  status: FileStatus,
+  resolution: ConflictResolutionResult | undefined,
+  spinnerFrame: number,
+): { indicator: string; color: string; label: string } {
+  switch (status) {
+    case 'resolved':
       return {
         indicator: statusIndicators.merged,
         color: colors.status.success,
-        label: `Resolved (${resolution.method})`,
+        label: `Resolved (${resolution?.method ?? 'ai'})`,
       };
-    }
-    return {
-      indicator: statusIndicators.error,
-      color: colors.status.error,
-      label: resolution.error ?? 'Resolution failed',
-    };
+    case 'failed':
+      return {
+        indicator: statusIndicators.error,
+        color: colors.status.error,
+        label: resolution?.error ?? 'Resolution failed',
+      };
+    case 'resolving':
+      return {
+        indicator: SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length] ?? '⠋',
+        color: colors.status.info,
+        label: 'Resolving...',
+      };
+    case 'pending':
+      return {
+        indicator: statusIndicators.conflicted,
+        color: colors.status.warning,
+        label: 'Waiting',
+      };
   }
-  if (aiResolving) {
-    return {
-      indicator: statusIndicators.merging,
-      color: colors.status.info,
-      label: 'AI resolving...',
-    };
-  }
-  return {
-    indicator: statusIndicators.conflicted,
-    color: colors.status.warning,
-    label: 'Unresolved',
-  };
 }
 
 /**
@@ -117,17 +147,51 @@ export const ConflictResolutionPanel = memo(function ConflictResolutionPanel({
   taskId,
   taskTitle,
   aiResolving,
+  currentlyResolvingFile,
   selectedIndex,
   onRetry,
   onSkip,
 }: ConflictResolutionPanelProps): ReactNode {
+  // Spinner animation frame
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
+
+  // Scroll offset for file list
+  const [scrollOffset, setScrollOffset] = useState(0);
+
+  // Update spinner frame when AI is resolving
+  useEffect(() => {
+    if (!aiResolving) {
+      return;
+    }
+    const interval = setInterval(() => {
+      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 80);
+    return () => clearInterval(interval);
+  }, [aiResolving]);
+
+  // Adjust scroll offset based on selected index
+  useEffect(() => {
+    if (selectedIndex < scrollOffset) {
+      setScrollOffset(selectedIndex);
+    } else if (selectedIndex >= scrollOffset + MAX_VISIBLE_FILES) {
+      setScrollOffset(selectedIndex - MAX_VISIBLE_FILES + 1);
+    }
+  }, [selectedIndex, scrollOffset]);
+
   if (!visible) {
     return null;
   }
 
   const resolvedCount = resolutions.filter((r) => r.success).length;
   const failedCount = resolutions.filter((r) => !r.success).length;
+  const pendingCount = conflicts.length - resolvedCount - failedCount;
   const state = getResolutionState(conflicts, resolutions, aiResolving);
+
+  // Calculate visible files based on scroll
+  const needsScroll = conflicts.length > MAX_VISIBLE_FILES;
+  const visibleConflicts = needsScroll
+    ? conflicts.slice(scrollOffset, scrollOffset + MAX_VISIBLE_FILES)
+    : conflicts;
 
   return (
     <box
@@ -160,6 +224,10 @@ export const ConflictResolutionPanel = memo(function ConflictResolutionPanel({
               <span fg={colors.status.error} attributes={boldAttr}>
                 {statusIndicators.error} Conflict Resolution Failed
               </span>
+            ) : state === 'in-progress' ? (
+              <span fg={colors.status.info} attributes={boldAttr}>
+                {SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]} AI Resolving Conflicts
+              </span>
             ) : (
               <span fg={colors.status.warning} attributes={boldAttr}>
                 {statusIndicators.conflicted} Merge Conflict Resolution
@@ -176,18 +244,31 @@ export const ConflictResolutionPanel = memo(function ConflictResolutionPanel({
           <span fg={colors.fg.primary}>{taskTitle}</span>
         </text>
 
-        {/* Summary */}
+        {/* Summary with progress */}
         <text>
           <span fg={colors.fg.muted}>Files: </span>
-          <span fg={colors.fg.primary}>{conflicts.length} conflicted</span>
-          {resolvedCount > 0 && <span fg={colors.status.success}>, {resolvedCount} resolved</span>}
-          {failedCount > 0 && <span fg={colors.status.error}>, {failedCount} failed</span>}
+          <span fg={colors.status.success}>{resolvedCount}</span>
+          <span fg={colors.fg.dim}>/</span>
+          <span fg={colors.fg.primary}>{conflicts.length}</span>
+          <span fg={colors.fg.muted}> resolved</span>
+          {failedCount > 0 && (
+            <>
+              <span fg={colors.fg.dim}> · </span>
+              <span fg={colors.status.error}>{failedCount} failed</span>
+            </>
+          )}
+          {pendingCount > 0 && aiResolving && (
+            <>
+              <span fg={colors.fg.dim}> · </span>
+              <span fg={colors.status.warning}>{pendingCount} pending</span>
+            </>
+          )}
         </text>
 
         {/* State-specific status message */}
-        {state === 'in-progress' && (
+        {state === 'in-progress' && currentlyResolvingFile && (
           <text fg={colors.status.info}>
-            {statusIndicators.merging} AI conflict resolution in progress...
+            {SPINNER_FRAMES[spinnerFrame % SPINNER_FRAMES.length]} Processing: {currentlyResolvingFile}
           </text>
         )}
         {state === 'has-failures' && (
@@ -201,10 +282,20 @@ export const ConflictResolutionPanel = memo(function ConflictResolutionPanel({
         {/* Separator */}
         <text fg={colors.border.muted}>{'─'.repeat(56)}</text>
 
-        {/* Conflicted files list */}
-        {conflicts.map((conflict, i) => {
-          const { indicator, color, label } = getFileStatus(conflict.filePath, resolutions, aiResolving);
-          const isSelected = i === selectedIndex;
+        {/* Scroll indicator - top */}
+        {needsScroll && scrollOffset > 0 && (
+          <text fg={colors.fg.dim}>
+            {'  '}↑ {scrollOffset} more file{scrollOffset !== 1 ? 's' : ''} above
+          </text>
+        )}
+
+        {/* Conflicted files list - fixed height with scroll */}
+        {visibleConflicts.map((conflict, i) => {
+          const absoluteIndex = scrollOffset + i;
+          const status = getFileStatus(conflict.filePath, resolutions, currentlyResolvingFile);
+          const resolution = resolutions.find((r) => r.filePath === conflict.filePath);
+          const { indicator, color, label } = getFileStatusDisplay(status, resolution, spinnerFrame);
+          const isSelected = absoluteIndex === selectedIndex;
           const prefix = isSelected ? '▸ ' : '  ';
 
           return (
@@ -221,6 +312,14 @@ export const ConflictResolutionPanel = memo(function ConflictResolutionPanel({
             </box>
           );
         })}
+
+        {/* Scroll indicator - bottom */}
+        {needsScroll && scrollOffset + MAX_VISIBLE_FILES < conflicts.length && (
+          <text fg={colors.fg.dim}>
+            {'  '}↓ {conflicts.length - scrollOffset - MAX_VISIBLE_FILES} more file
+            {conflicts.length - scrollOffset - MAX_VISIBLE_FILES !== 1 ? 's' : ''} below
+          </text>
+        )}
 
         {/* Footer with keyboard shortcuts - varies by state */}
         <box style={{ marginTop: 1 }}>

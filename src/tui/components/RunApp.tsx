@@ -176,6 +176,8 @@ export interface RunAppProps {
   parallelConflictTaskTitle?: string;
   /** Whether AI conflict resolution is running */
   parallelAiResolving?: boolean;
+  /** The file currently being resolved by AI */
+  parallelCurrentlyResolvingFile?: string;
   /** Maps task IDs to worker IDs for output routing in parallel mode */
   parallelTaskIdToWorkerId?: Map<string, string>;
   /** Task IDs that completed locally but merge failed (shows ⚠ in TUI) */
@@ -449,6 +451,7 @@ export function RunApp({
   parallelConflictTaskId = '',
   parallelConflictTaskTitle = '',
   parallelAiResolving = false,
+  parallelCurrentlyResolvingFile = '',
   parallelTaskIdToWorkerId,
   parallelCompletedLocallyTaskIds,
   parallelAutoCommitSkippedTaskIds: _parallelAutoCommitSkippedTaskIds, // Reserved for future status bar warning
@@ -2904,6 +2907,7 @@ export function RunApp({
         taskId={parallelConflictTaskId}
         taskTitle={parallelConflictTaskTitle}
         aiResolving={parallelAiResolving}
+        currentlyResolvingFile={parallelCurrentlyResolvingFile}
         selectedIndex={conflictSelectedIndex}
         onRetry={onConflictRetry}
         onSkip={onConflictSkip}
