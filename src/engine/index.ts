@@ -459,6 +459,54 @@ export class ExecutionEngine {
   }
 
   /**
+   * Generate a preview of the review prompt that would be used for a task.
+   * Used by the TUI to show users what prompt will be sent to the reviewer agent.
+   */
+  async generateReviewPromptPreview(
+    taskId: string
+  ): Promise<{ success: true; prompt: string; source: string } | { success: false; error: string }> {
+    if (!this.tracker) {
+      return { success: false, error: 'No tracker configured' };
+    }
+
+    // Get the task (include completed tasks so we can review prompts after execution)
+    const tasks = await this.tracker.getTasks({ status: ['open', 'in_progress', 'completed'] });
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) {
+      return { success: false, error: `Task not found: ${taskId}` };
+    }
+
+    // Get recent progress summary for context
+    const recentProgress = await getRecentProgressSummary(this.config.cwd, 5);
+
+    // Get codebase patterns from progress.md (if any exist)
+    const codebasePatterns = await getCodebasePatternsForPrompt(this.config.cwd);
+
+    // Get PRD context if the tracker supports it
+    const prdContext = await this.tracker.getPrdContext?.();
+
+    // Build extended template context with PRD data and patterns
+    const extendedContext = {
+      recentProgress,
+      codebasePatterns,
+      prd: prdContext ?? undefined,
+    };
+
+    // Generate the review prompt using unified template resolution
+    const result = renderReviewPrompt(task, this.config, this.config.reviewPromptPath, undefined, extendedContext);
+
+    if (!result.success || !result.prompt) {
+      return { success: false, error: result.error ?? 'Unknown error generating review prompt' };
+    }
+
+    return {
+      success: true,
+      prompt: result.prompt,
+      source: result.source ?? 'unknown',
+    };
+  }
+
+  /**
    * Start the execution loop
    */
   async start(): Promise<void> {
@@ -1191,8 +1239,8 @@ export class ExecutionEngine {
           message: `Review stage starting (agent: ${reviewAgentId})`,
         });
 
-        // Insert divider into live output stream so UI can split worker and reviewer
-        this.state.currentOutput += REVIEW_OUTPUT_DIVIDER;
+        // Emit divider to live output stream so UI can split worker and reviewer in real-time
+        // Note: Don't add to this.state.currentOutput to avoid duplication in final combined log
         this.emit({
           type: 'agent:output',
           timestamp: new Date().toISOString(),

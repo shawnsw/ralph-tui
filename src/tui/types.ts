@@ -186,6 +186,10 @@ export interface RightPanelProps {
   promptPreview?: string;
   /** Source of the template used for the prompt (e.g., 'tracker:beads', 'builtin:json') */
   templateSource?: string;
+  /** Rendered review prompt content for preview (when viewMode is 'prompt' and review is enabled) */
+  reviewPromptPreview?: string;
+  /** Source of the template used for the review prompt (e.g., 'global:review.hbs', 'builtin') */
+  reviewTemplateSource?: string;
   /** Whether currently viewing a remote instance */
   isViewingRemote?: boolean;
   /** Connection status when viewing remote */

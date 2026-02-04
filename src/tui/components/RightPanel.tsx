@@ -7,6 +7,7 @@
 
 import type { ReactNode } from 'react';
 import { useMemo, useState, useEffect } from 'react';
+import { useTerminalDimensions } from '@opentui/react';
 import { colors, getTaskStatusColor, getTaskStatusIndicator } from '../theme.js';
 import type { RightPanelProps, DetailsViewMode, IterationTimingInfo, TaskPriority } from '../types.js';
 import { stripAnsiCodes, type FormattedSegment } from '../../plugins/agents/output-formatting.js';
@@ -274,12 +275,16 @@ function TaskMetadataView({
   task: NonNullable<RightPanelProps['selectedTask']>;
   isFocused?: boolean;
 }): ReactNode {
+  const { width } = useTerminalDimensions();
   const statusColor = getTaskStatusColor(task.status);
   const statusIndicator = getTaskStatusIndicator(task.status);
   // Check metadata for acceptance criteria (JSON tracker stores it there)
   const metadataCriteria = task.metadata?.acceptanceCriteria;
   const criteria = parseAcceptanceCriteria(task.description, undefined, metadataCriteria);
   const cleanDescription = extractDescription(task.description);
+
+  // Responsive layout: side-by-side on wide screens (>= 160 cols), stacked on narrow
+  const useWideLayout = width >= 160;
 
   return (
     <box style={{ flexDirection: 'column', padding: 1, flexGrow: 1 }}>
@@ -361,58 +366,68 @@ function TaskMetadataView({
           )}
         </box>
 
-      {/* Description section - scrollable and focusable */}
-      {cleanDescription && (
-        <box style={{ marginBottom: 1, flexGrow: 1, flexDirection: 'column' }}>
-          <box style={{ marginBottom: 0 }}>
-            <text fg={colors.accent.primary}>Description</text>
-          </box>
-          <box
-            style={{
-              flexGrow: 1,
-              border: true,
-              borderColor: isFocused ? colors.accent.primary : colors.border.muted,
-              backgroundColor: colors.bg.tertiary,
-            }}
-          >
-            <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={isFocused}>
-              <text fg={colors.fg.secondary}>{cleanDescription}</text>
-            </scrollbox>
-          </box>
+      {/* Responsive layout for Description and Acceptance Criteria */}
+      {(cleanDescription || criteria.length > 0) && (
+        <box style={{ flexGrow: 1, flexDirection: useWideLayout ? 'row' : 'column', gap: 1, marginBottom: 1 }}>
+          {/* Description section - scrollable and focusable */}
+          {cleanDescription && (
+            <box style={{ flexGrow: 1, flexBasis: 0, flexDirection: 'column' }}>
+              <box style={{ marginBottom: 0 }}>
+                <text fg={colors.accent.primary}>Description</text>
+              </box>
+              <box
+                style={{
+                  flexGrow: 1,
+                  border: true,
+                  borderColor: isFocused ? colors.accent.primary : colors.border.muted,
+                  backgroundColor: colors.bg.tertiary,
+                }}
+              >
+                <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={isFocused}>
+                  <text fg={colors.fg.secondary}>{cleanDescription}</text>
+                </scrollbox>
+              </box>
+            </box>
+          )}
+
+          {/* Acceptance criteria section */}
+          {criteria.length > 0 && (
+            <box style={{ flexGrow: 1, flexBasis: 0, flexDirection: 'column' }}>
+              <box style={{ marginBottom: 0 }}>
+                <text fg={colors.accent.primary}>Acceptance Criteria</text>
+              </box>
+              <box
+                style={{
+                  flexGrow: 1,
+                  padding: 1,
+                  backgroundColor: colors.bg.secondary,
+                  border: true,
+                  borderColor: colors.border.muted,
+                  flexDirection: 'column',
+                }}
+              >
+                <scrollbox style={{ flexGrow: 1 }}>
+                  <box style={{ flexDirection: 'column' }}>
+                    {criteria.map((item, index) => (
+                      <box key={index} style={{ flexDirection: 'row', marginBottom: 0 }}>
+                        <text>
+                          <span fg={item.checked ? colors.status.success : colors.fg.muted}>
+                            {item.checked ? '[x]' : '[ ]'}
+                          </span>
+                          <span fg={item.checked ? colors.fg.muted : colors.fg.secondary}>
+                            {' '}
+                            {item.text}
+                          </span>
+                        </text>
+                      </box>
+                    ))}
+                  </box>
+                </scrollbox>
+              </box>
+            </box>
+          )}
         </box>
       )}
-
-        {/* Acceptance criteria section */}
-        {criteria.length > 0 && (
-          <box style={{ marginBottom: 1 }}>
-            <box style={{ marginBottom: 0 }}>
-              <text fg={colors.accent.primary}>Acceptance Criteria</text>
-            </box>
-            <box
-              style={{
-                padding: 1,
-                backgroundColor: colors.bg.secondary,
-                border: true,
-                borderColor: colors.border.muted,
-                flexDirection: 'column',
-              }}
-            >
-              {criteria.map((item, index) => (
-                <box key={index} style={{ flexDirection: 'row', marginBottom: 0 }}>
-                  <text>
-                    <span fg={item.checked ? colors.status.success : colors.fg.muted}>
-                      {item.checked ? '[x]' : '[ ]'}
-                    </span>
-                    <span fg={item.checked ? colors.fg.muted : colors.fg.secondary}>
-                      {' '}
-                      {item.text}
-                    </span>
-                  </text>
-                </box>
-              ))}
-            </box>
-          </box>
-        )}
 
         {/* Dependencies section */}
         {((task.dependsOn && task.dependsOn.length > 0) ||
@@ -612,19 +627,98 @@ function TimingSummary({ timing }: { timing?: IterationTimingInfo }): ReactNode 
  * Note: This shows a "point-in-time" preview - dynamic content like progress.md
  * may change before the actual prompt is sent during execution.
  */
+/**
+ * Simplifies template source labels for display
+ * - "tracker:beads-bv" -> "tracker:beads-bv"
+ * - "global:/path" -> "global"
+ * - "project:/path" -> "project"
+ * - "builtin" -> "builtin"
+ * - "/full/path" -> "cli"
+ */
+function simplifyTemplateSource(source: string | undefined): string {
+  if (!source) return 'unknown';
+
+  // Handle prefixed sources
+  if (source.startsWith('tracker:')) return source;
+  if (source.startsWith('global:')) return 'global';
+  if (source.startsWith('project:')) return 'project';
+  if (source === 'builtin') return 'builtin';
+
+  // Absolute path without prefix = CLI argument
+  if (source.startsWith('/')) return 'cli';
+
+  return source;
+}
+
+/**
+ * Renders highlighted prompt text with syntax highlighting
+ */
+function renderPromptText(promptText: string): ReactNode {
+  return (
+    <box style={{ flexDirection: 'column' }}>
+      {promptText.split('\n').map((line, i) => {
+        // Highlight markdown headers
+        if (line.match(/^#+\s/)) {
+          return (
+            <text key={i} fg={colors.accent.primary}>
+              {line}
+            </text>
+          );
+        }
+        // Highlight bullet points
+        if (line.match(/^\s*[-*]\s/)) {
+          return (
+            <text key={i} fg={colors.fg.secondary}>
+              {line}
+            </text>
+          );
+        }
+        // Highlight code fences
+        if (line.match(/^```/)) {
+          return (
+            <text key={i} fg={colors.accent.tertiary}>
+              {line}
+            </text>
+          );
+        }
+        // Regular text
+        return (
+          <text key={i} fg={colors.fg.secondary}>
+            {line}
+          </text>
+        );
+      })}
+    </box>
+  );
+}
+
 function PromptPreviewView({
   task,
   promptPreview,
   templateSource,
-  isFocused = false,
+  reviewPromptPreview,
+  reviewTemplateSource,
+  outputFocus,
 }: {
   task: NonNullable<RightPanelProps['selectedTask']>;
   promptPreview?: string;
   templateSource?: string;
-  isFocused?: boolean;
+  reviewPromptPreview?: string;
+  reviewTemplateSource?: string;
+  outputFocus?: 'worker' | 'reviewer' | 'content';
 }): ReactNode {
+  const { width } = useTerminalDimensions();
   const statusColor = getTaskStatusColor(task.status);
   const statusIndicator = getTaskStatusIndicator(task.status);
+  const hasReviewPrompt = Boolean(reviewPromptPreview);
+
+  // When review is enabled, focus is either 'worker' or 'reviewer'
+  // When review is disabled, focus is 'content' (which applies to worker only)
+  const workerFocused = outputFocus === 'worker' || (!hasReviewPrompt && outputFocus === 'content');
+  const reviewerFocused = outputFocus === 'reviewer';
+
+  // Responsive layout: side-by-side on wide screens (>= 160 cols), stacked on narrow
+  const useWideLayout = width >= 160;
 
   return (
     <box style={{ flexDirection: 'column', padding: 1, flexGrow: 1 }}>
@@ -637,11 +731,14 @@ function PromptPreviewView({
             <span fg={colors.fg.muted}> ({task.id})</span>
           </text>
         </box>
-        {templateSource && (
-          <box>
-            <text fg={colors.accent.secondary}>[{templateSource}]</text>
-          </box>
-        )}
+        <box style={{ flexDirection: 'row', gap: 1 }}>
+          {templateSource && (
+            <text fg={colors.accent.secondary}>worker:{simplifyTemplateSource(templateSource)}</text>
+          )}
+          {hasReviewPrompt && reviewTemplateSource && (
+            <text fg={colors.accent.tertiary}> reviewer:{simplifyTemplateSource(reviewTemplateSource)}</text>
+          )}
+        </box>
       </box>
 
       {/* Dynamic content notice */}
@@ -659,59 +756,76 @@ function PromptPreviewView({
         </text>
       </box>
 
-      {/* Full-height prompt preview */}
-      <box
-        title="Prompt Preview"
-        style={{
-          flexGrow: 1,
-          border: true,
-          borderColor: isFocused ? colors.accent.primary : colors.border.muted,
-          backgroundColor: colors.bg.secondary,
-        }}
-      >
-        <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={isFocused}>
-          {promptPreview ? (
-            <box style={{ flexDirection: 'column' }}>
-              {promptPreview.split('\n').map((line, i) => {
-                // Highlight markdown headers
-                if (line.match(/^#+\s/)) {
-                  return (
-                    <text key={i} fg={colors.accent.primary}>
-                      {line}
-                    </text>
-                  );
-                }
-                // Highlight bullet points
-                if (line.match(/^\s*[-*]\s/)) {
-                  return (
-                    <text key={i} fg={colors.fg.secondary}>
-                      {line}
-                    </text>
-                  );
-                }
-                // Highlight code fences
-                if (line.match(/^```/)) {
-                  return (
-                    <text key={i} fg={colors.accent.tertiary}>
-                      {line}
-                    </text>
-                  );
-                }
-                // Regular text
-                return (
-                  <text key={i} fg={colors.fg.secondary}>
-                    {line}
-                  </text>
-                );
-              })}
+      {/* Split or single prompt preview */}
+      {hasReviewPrompt ? (
+        // Responsive split view: side-by-side on wide screens, stacked on narrow
+        <box style={{ flexGrow: 1, flexDirection: useWideLayout ? 'row' : 'column', gap: 1 }}>
+          {/* Worker prompt */}
+          <box
+            style={{
+              flexGrow: 1,
+              flexBasis: 0,
+              border: true,
+              borderColor: workerFocused ? colors.accent.primary : colors.border.muted,
+              backgroundColor: colors.bg.secondary,
+            }}
+          >
+            <box style={{ padding: 1, backgroundColor: colors.bg.tertiary }}>
+              <text fg={colors.fg.primary}>WORKER PROMPT</text>
             </box>
-          ) : (
-            <text fg={colors.fg.muted}>
-              Cycle views with 'o' or press Shift+O for prompt preview
-            </text>
-          )}
-        </scrollbox>
-      </box>
+            <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={workerFocused}>
+              {promptPreview ? (
+                renderPromptText(promptPreview)
+              ) : (
+                <text fg={colors.fg.muted}>No worker prompt</text>
+              )}
+            </scrollbox>
+          </box>
+
+          {/* Reviewer prompt */}
+          <box
+            style={{
+              flexGrow: 1,
+              flexBasis: 0,
+              border: true,
+              borderColor: reviewerFocused ? colors.accent.primary : colors.border.muted,
+              backgroundColor: colors.bg.secondary,
+            }}
+          >
+            <box style={{ padding: 1, backgroundColor: colors.bg.tertiary }}>
+              <text fg={colors.accent.primary}>REVIEWER PROMPT</text>
+            </box>
+            <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={reviewerFocused}>
+              {reviewPromptPreview ? (
+                renderPromptText(reviewPromptPreview)
+              ) : (
+                <text fg={colors.fg.muted}>Loading review prompt...</text>
+              )}
+            </scrollbox>
+          </box>
+        </box>
+      ) : (
+        // Single view: Worker prompt only
+        <box
+          title="Worker Prompt"
+          style={{
+            flexGrow: 1,
+            border: true,
+            borderColor: workerFocused ? colors.accent.primary : colors.border.muted,
+            backgroundColor: colors.bg.secondary,
+          }}
+        >
+          <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={workerFocused}>
+            {promptPreview ? (
+              renderPromptText(promptPreview)
+            ) : (
+              <text fg={colors.fg.muted}>
+                Cycle views with 'o' or press Shift+O for prompt preview
+              </text>
+            )}
+          </scrollbox>
+        </box>
+      )}
     </box>
   );
 }
@@ -741,8 +855,12 @@ function TaskOutputView({
   reviewerAgent?: string;
   outputFocus?: 'worker' | 'reviewer';
 }): ReactNode {
+  const { width } = useTerminalDimensions();
   const statusColor = getTaskStatusColor(task.status);
   const statusIndicator = getTaskStatusIndicator(task.status);
+
+  // Responsive layout: side-by-side on wide screens (>= 160 cols), stacked on narrow
+  const useWideLayout = width >= 160;
 
   // Check if we're live streaming
   const isLiveStreaming = iterationTiming?.isRunning === true;
@@ -848,13 +966,14 @@ function TaskOutputView({
       {/* Timing summary - shows start/end/duration */}
       <TimingSummary timing={iterationTiming} />
 
-      {/* Split output sections when review is enabled */}
+      {/* Split output sections when review is enabled - responsive layout */}
       {isReviewEnabled ? (
-        <box style={{ flexDirection: 'column', flexGrow: 1, gap: 1 }}>
+        <box style={{ flexDirection: useWideLayout ? 'row' : 'column', flexGrow: 1, gap: 1 }}>
           {/* Worker output section */}
           <box
             style={{
               flexGrow: 1,
+              flexBasis: 0,
               flexDirection: 'column',
               border: true,
               borderColor: outputFocus === 'worker' ? colors.accent.primary : colors.border.muted,
@@ -888,6 +1007,7 @@ function TaskOutputView({
           <box
             style={{
               flexGrow: 1,
+              flexBasis: 0,
               flexDirection: 'column',
               border: true,
               borderColor: outputFocus === 'reviewer' ? colors.accent.primary : colors.border.muted,
@@ -965,6 +1085,8 @@ function TaskDetails({
   reviewerAgent,
   promptPreview,
   templateSource,
+  reviewPromptPreview,
+  reviewTemplateSource,
   outputFocus,
 }: {
   task: NonNullable<RightPanelProps['selectedTask']>;
@@ -978,6 +1100,8 @@ function TaskDetails({
   reviewerAgent?: string;
   promptPreview?: string;
   templateSource?: string;
+  reviewPromptPreview?: string;
+  reviewTemplateSource?: string;
   outputFocus?: 'worker' | 'reviewer' | 'content';
 }): ReactNode {
   if (viewMode === 'output') {
@@ -1002,7 +1126,9 @@ function TaskDetails({
         task={task}
         promptPreview={promptPreview}
         templateSource={templateSource}
-        isFocused={outputFocus === 'content'}
+        reviewPromptPreview={reviewPromptPreview}
+        reviewTemplateSource={reviewTemplateSource}
+        outputFocus={outputFocus}
       />
     );
   }
@@ -1025,6 +1151,8 @@ export function RightPanel({
   reviewerAgent,
   promptPreview,
   templateSource,
+  reviewPromptPreview,
+  reviewTemplateSource,
   isViewingRemote = false,
   remoteConnectionStatus,
   remoteAlias,
@@ -1065,6 +1193,8 @@ export function RightPanel({
           reviewerAgent={reviewerAgent}
           promptPreview={promptPreview}
           templateSource={templateSource}
+          reviewPromptPreview={reviewPromptPreview}
+          reviewTemplateSource={reviewTemplateSource}
           outputFocus={outputFocus}
         />
       ) : (

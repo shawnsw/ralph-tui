@@ -565,6 +565,8 @@ export function RunApp({
   // Prompt preview content and template source (for prompt view mode)
   const [promptPreview, setPromptPreview] = useState<string | undefined>(undefined);
   const [templateSource, setTemplateSource] = useState<string | undefined>(undefined);
+  const [reviewPromptPreview, setReviewPromptPreview] = useState<string | undefined>(undefined);
+  const [reviewTemplateSource, setReviewTemplateSource] = useState<string | undefined>(undefined);
   // Subagent tracing detail level - initialized from config, can be cycled with 't' key
   // Default to 'moderate' to show inline subagent sections by default
   const [subagentDetailLevel, setSubagentDetailLevel] = useState<SubagentDetailLevel>(
@@ -999,6 +1001,8 @@ export function RunApp({
     if (!promptPreviewTaskId) {
       setPromptPreview('No task selected');
       setTemplateSource(undefined);
+      setReviewPromptPreview(undefined);
+      setReviewTemplateSource(undefined);
       return;
     }
 
@@ -1007,6 +1011,8 @@ export function RunApp({
 
     setPromptPreview('Generating prompt preview...');
     setTemplateSource(undefined);
+    setReviewPromptPreview(undefined);
+    setReviewTemplateSource(undefined);
 
     void (async () => {
       // Use remote API when viewing remote, local engine otherwise
@@ -1036,6 +1042,20 @@ export function RunApp({
           setPromptPreview(`Error: ${result.error}`);
           setTemplateSource(undefined);
         }
+
+        // If review is enabled, also generate review prompt preview
+        if (storedConfig?.review?.enabled) {
+          const reviewResult = await engine.generateReviewPromptPreview(promptPreviewTaskId);
+          if (cancelled) return;
+
+          if (reviewResult.success) {
+            setReviewPromptPreview(reviewResult.prompt);
+            setReviewTemplateSource(reviewResult.source);
+          } else {
+            setReviewPromptPreview(`Error: ${reviewResult.error}`);
+            setReviewTemplateSource(undefined);
+          }
+        }
       }
     })();
 
@@ -1043,7 +1063,7 @@ export function RunApp({
     return () => {
       cancelled = true;
     };
-  }, [detailsViewMode, promptPreviewTaskId, engine, isViewingRemote, instanceManager]);
+  }, [detailsViewMode, promptPreviewTaskId, engine, isViewingRemote, instanceManager, storedConfig?.review?.enabled]);
 
   // Fetch remote iteration output when selecting a different task (for remote viewing)
   // This fills the remoteIterationCache so the useMemo can use it synchronously
@@ -1587,8 +1607,8 @@ export function RunApp({
               }
               return 'tasks';
             });
-          } else if (detailsViewMode === 'details' || detailsViewMode === 'prompt') {
-            // Details/Prompt view: simple toggle between tasks and content
+          } else if (detailsViewMode === 'details') {
+            // Details view: simple toggle between tasks and content
             setFocusedPane((prev) => {
               if (prev === 'tasks') {
                 // First Tab press: focus content pane
@@ -1596,6 +1616,32 @@ export function RunApp({
               }
               if (prev === 'content') {
                 // From content: go to subagentTree if visible, else back to tasks
+                return subagentPanelVisible ? 'subagentTree' : 'tasks';
+              }
+              if (prev === 'subagentTree') {
+                // From subagentTree: back to tasks
+                return 'tasks';
+              }
+              return 'tasks';
+            });
+          } else if (detailsViewMode === 'prompt') {
+            // Prompt view: cycle through worker/reviewer (if review enabled)
+            const reviewerConfigured = storedConfig?.review?.enabled && storedConfig?.review?.agent && storedConfig.review.agent.trim() !== '';
+
+            setFocusedPane((prev) => {
+              // Cycle: none (tasks) -> worker -> reviewer (if configured) -> subagentTree (if visible) -> none
+              if (prev === 'tasks') {
+                // First Tab press: focus worker
+                return 'worker';
+              }
+              if (prev === 'worker') {
+                // From worker: go to reviewer if configured, else subagentTree if visible, else back to tasks
+                if (reviewerConfigured) return 'reviewer';
+                if (subagentPanelVisible) return 'subagentTree';
+                return 'tasks';
+              }
+              if (prev === 'reviewer') {
+                // From reviewer: go to subagentTree if visible, else back to tasks
                 return subagentPanelVisible ? 'subagentTree' : 'tasks';
               }
               if (prev === 'subagentTree') {
@@ -2804,6 +2850,8 @@ export function RunApp({
               reviewerAgent={storedConfig?.review?.enabled && storedConfig?.review?.agent ? storedConfig.review.agent : undefined}
               promptPreview={promptPreview}
               templateSource={templateSource}
+              reviewPromptPreview={reviewPromptPreview}
+              reviewTemplateSource={reviewTemplateSource}
               isViewingRemote={isViewingRemote}
               remoteConnectionStatus={instanceTabs?.[selectedTabIndex]?.status}
               remoteAlias={instanceTabs?.[selectedTabIndex]?.alias}
@@ -2846,6 +2894,8 @@ export function RunApp({
               reviewerAgent={storedConfig?.review?.enabled && storedConfig?.review?.agent ? storedConfig.review.agent : undefined}
               promptPreview={promptPreview}
               templateSource={templateSource}
+              reviewPromptPreview={reviewPromptPreview}
+              reviewTemplateSource={reviewTemplateSource}
               isViewingRemote={isViewingRemote}
               remoteConnectionStatus={instanceTabs?.[selectedTabIndex]?.status}
               remoteAlias={instanceTabs?.[selectedTabIndex]?.alias}
