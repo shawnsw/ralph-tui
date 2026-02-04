@@ -79,7 +79,7 @@ type ViewMode = 'tasks' | 'iterations' | 'iteration-detail' | 'parallel-overview
  * - 'reviewer': Reviewer output has keyboard focus (up/down scroll)
  * - 'subagentTree': SubagentTreePanel has keyboard focus (j/k select nodes)
  */
-type FocusedPane = 'tasks' | 'worker' | 'reviewer' | 'subagentTree';
+type FocusedPane = 'tasks' | 'worker' | 'reviewer' | 'subagentTree' | 'content';
 
 /**
  * Props for the RunApp component
@@ -600,12 +600,13 @@ export function RunApp({
   const [userManuallyHidPanel, setUserManuallyHidPanel] = useState(false);
 
   // Focused pane for TAB-based navigation between panels
-  // Note: Task list is always visually highlighted
-  // Tab only changes focus for worker/reviewer output sections
-  // - 'tasks': Default state, arrows navigate task list
-  // - 'worker': Worker output is highlighted
-  // - 'reviewer': Reviewer output is highlighted
-  // - 'subagentTree': Subagent tree navigation
+  // Note: Selected task row always stays highlighted regardless of focus state
+  // Panel borders use accent color when focused, normal color when not focused
+  // - 'tasks': Default state, task panel border highlighted, arrows navigate task list
+  // - 'worker': Worker output section border highlighted, arrows scroll output
+  // - 'reviewer': Reviewer output section border highlighted, arrows scroll output
+  // - 'content': Details/Prompt section border highlighted, arrows scroll content
+  // - 'subagentTree': Subagent tree panel border highlighted, arrows navigate tree
   const [focusedPane, setFocusedPane] = useState<FocusedPane>('tasks');
 
   // Selected node in subagent tree for keyboard navigation
@@ -1558,9 +1559,10 @@ export function RunApp({
           break;
 
         case 'tab':
-          // Tab cycles through output sections when in output view
-          // Tasks remain always highlighted, Tab only switches focus for worker/reviewer
+          // Tab cycles through sections based on view mode
+          // Tasks remain always highlighted, Tab only switches focus for content sections
           if (detailsViewMode === 'output') {
+            // Output view: cycle through worker/reviewer/subagentTree
             const reviewerConfigured = storedConfig?.review?.enabled && storedConfig?.review?.agent && storedConfig.review.agent.trim() !== '';
 
             setFocusedPane((prev) => {
@@ -1585,21 +1587,36 @@ export function RunApp({
               }
               return 'tasks';
             });
+          } else if (detailsViewMode === 'details' || detailsViewMode === 'prompt') {
+            // Details/Prompt view: simple toggle between tasks and content
+            setFocusedPane((prev) => {
+              if (prev === 'tasks') {
+                // First Tab press: focus content pane
+                return 'content';
+              }
+              if (prev === 'content') {
+                // From content: go to subagentTree if visible, else back to tasks
+                return subagentPanelVisible ? 'subagentTree' : 'tasks';
+              }
+              if (prev === 'subagentTree') {
+                // From subagentTree: back to tasks
+                return 'tasks';
+              }
+              return 'tasks';
+            });
           }
           break;
 
         case 'up':
         case 'k':
           // Focus-aware navigation
-          if (detailsViewMode === 'output') {
-            // When viewing output, check which pane has focus
-            if (focusedPane === 'subagentTree') {
-              navigateSubagentTree(-1);
-              break;
-            } else if (focusedPane === 'worker' || focusedPane === 'reviewer') {
-              // Output boxes handle scrolling internally - don't navigate tasks
-              break;
-            }
+          if (focusedPane === 'subagentTree') {
+            // Subagent tree navigation
+            navigateSubagentTree(-1);
+            break;
+          } else if (focusedPane === 'worker' || focusedPane === 'reviewer' || focusedPane === 'content') {
+            // Content panes handle scrolling internally - don't navigate tasks
+            break;
           }
           // Default: navigate task/iteration/parallel lists
           if (viewMode === 'tasks') {
@@ -1614,15 +1631,13 @@ export function RunApp({
         case 'down':
         case 'j':
           // Focus-aware navigation
-          if (detailsViewMode === 'output') {
-            // When viewing output, check which pane has focus
-            if (focusedPane === 'subagentTree') {
-              navigateSubagentTree(1);
-              break;
-            } else if (focusedPane === 'worker' || focusedPane === 'reviewer') {
-              // Output boxes handle scrolling internally - don't navigate tasks
-              break;
-            }
+          if (focusedPane === 'subagentTree') {
+            // Subagent tree navigation
+            navigateSubagentTree(1);
+            break;
+          } else if (focusedPane === 'worker' || focusedPane === 'reviewer' || focusedPane === 'content') {
+            // Content panes handle scrolling internally - don't navigate tasks
+            break;
           }
           // Default: navigate task/iteration/parallel lists
           if (viewMode === 'tasks') {
@@ -2792,7 +2807,7 @@ export function RunApp({
               isViewingRemote={isViewingRemote}
               remoteConnectionStatus={instanceTabs?.[selectedTabIndex]?.status}
               remoteAlias={instanceTabs?.[selectedTabIndex]?.alias}
-              outputFocus={focusedPane === 'worker' || focusedPane === 'reviewer' ? focusedPane : undefined}
+              outputFocus={focusedPane === 'worker' || focusedPane === 'reviewer' ? focusedPane : focusedPane === 'content' ? 'content' : undefined}
             />
             {/* Subagent Tree Panel - shown on right side when toggled with 'T' key */}
             {subagentPanelVisible && (
@@ -2834,7 +2849,7 @@ export function RunApp({
               isViewingRemote={isViewingRemote}
               remoteConnectionStatus={instanceTabs?.[selectedTabIndex]?.status}
               remoteAlias={instanceTabs?.[selectedTabIndex]?.alias}
-              outputFocus={focusedPane === 'worker' || focusedPane === 'reviewer' ? focusedPane : undefined}
+              outputFocus={focusedPane === 'worker' || focusedPane === 'reviewer' ? focusedPane : focusedPane === 'content' ? 'content' : undefined}
             />
             {/* Subagent Tree Panel - shown on right side when toggled with 'T' key */}
             {subagentPanelVisible && (

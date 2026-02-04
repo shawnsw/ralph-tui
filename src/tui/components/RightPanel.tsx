@@ -269,8 +269,10 @@ function NoSelection({
  */
 function TaskMetadataView({
   task,
+  isFocused = false,
 }: {
   task: NonNullable<RightPanelProps['selectedTask']>;
+  isFocused?: boolean;
 }): ReactNode {
   const statusColor = getTaskStatusColor(task.status);
   const statusIndicator = getTaskStatusIndicator(task.status);
@@ -281,31 +283,30 @@ function TaskMetadataView({
 
   return (
     <box style={{ flexDirection: 'column', padding: 1, flexGrow: 1 }}>
-      <scrollbox style={{ flexGrow: 1 }}>
-        {/* Task title and status */}
-        <box style={{ marginBottom: 1 }}>
-          <text>
-            <span fg={statusColor}>{statusIndicator}</span>
-            <span fg={colors.fg.primary}> {task.title}</span>
-          </text>
-        </box>
+      {/* Task title and status */}
+      <box style={{ marginBottom: 1 }}>
+        <text>
+          <span fg={statusColor}>{statusIndicator}</span>
+          <span fg={colors.fg.primary}> {task.title}</span>
+        </text>
+      </box>
 
-        {/* Task ID */}
-        <box style={{ marginBottom: 1 }}>
-          <text fg={colors.fg.muted}>ID: {task.id}</text>
-        </box>
+      {/* Task ID */}
+      <box style={{ marginBottom: 1 }}>
+        <text fg={colors.fg.muted}>ID: {task.id}</text>
+      </box>
 
-        {/* Metadata section - compact row of key info */}
-        <box
-          style={{
-            marginBottom: 1,
-            padding: 1,
-            backgroundColor: colors.bg.secondary,
-            border: true,
-            borderColor: colors.border.muted,
-            flexDirection: 'column',
-          }}
-        >
+      {/* Metadata section - compact row of key info */}
+      <box
+        style={{
+          marginBottom: 1,
+          padding: 1,
+          backgroundColor: colors.bg.secondary,
+          border: true,
+          borderColor: colors.border.muted,
+          flexDirection: 'column',
+        }}
+      >
           {/* Status row */}
           <box style={{ flexDirection: 'row', marginBottom: 0 }}>
             <text fg={colors.fg.muted}>Status: </text>
@@ -360,24 +361,26 @@ function TaskMetadataView({
           )}
         </box>
 
-        {/* Description section */}
-        {cleanDescription && (
-          <box style={{ marginBottom: 1 }}>
-            <box style={{ marginBottom: 0 }}>
-              <text fg={colors.accent.primary}>Description</text>
-            </box>
-            <box
-              style={{
-                padding: 1,
-                backgroundColor: colors.bg.tertiary,
-                border: true,
-                borderColor: colors.border.muted,
-              }}
-            >
-              <text fg={colors.fg.secondary}>{cleanDescription}</text>
-            </box>
+      {/* Description section - scrollable and focusable */}
+      {cleanDescription && (
+        <box style={{ marginBottom: 1, flexGrow: 1, flexDirection: 'column' }}>
+          <box style={{ marginBottom: 0 }}>
+            <text fg={colors.accent.primary}>Description</text>
           </box>
-        )}
+          <box
+            style={{
+              flexGrow: 1,
+              border: true,
+              borderColor: isFocused ? colors.accent.primary : colors.border.muted,
+              backgroundColor: colors.bg.tertiary,
+            }}
+          >
+            <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={isFocused}>
+              <text fg={colors.fg.secondary}>{cleanDescription}</text>
+            </scrollbox>
+          </box>
+        </box>
+      )}
 
         {/* Acceptance criteria section */}
         {criteria.length > 0 && (
@@ -487,22 +490,21 @@ function TaskMetadataView({
           </box>
         )}
 
-        {/* Timestamps */}
-        {(task.createdAt || task.updatedAt) && (
-          <box style={{ marginTop: 1 }}>
-            {task.createdAt && (
-              <text fg={colors.fg.dim}>
-                Created: {new Date(task.createdAt).toLocaleString()}
-              </text>
-            )}
-            {task.updatedAt && (
-              <text fg={colors.fg.dim}>
-                {' '}| Updated: {new Date(task.updatedAt).toLocaleString()}
-              </text>
-            )}
-          </box>
-        )}
-      </scrollbox>
+      {/* Timestamps */}
+      {(task.createdAt || task.updatedAt) && (
+        <box style={{ marginTop: 1 }}>
+          {task.createdAt && (
+            <text fg={colors.fg.dim}>
+              Created: {new Date(task.createdAt).toLocaleString()}
+            </text>
+          )}
+          {task.updatedAt && (
+            <text fg={colors.fg.dim}>
+              {' '}| Updated: {new Date(task.updatedAt).toLocaleString()}
+            </text>
+          )}
+        </box>
+      )}
     </box>
   );
 }
@@ -614,10 +616,12 @@ function PromptPreviewView({
   task,
   promptPreview,
   templateSource,
+  isFocused = false,
 }: {
   task: NonNullable<RightPanelProps['selectedTask']>;
   promptPreview?: string;
   templateSource?: string;
+  isFocused?: boolean;
 }): ReactNode {
   const statusColor = getTaskStatusColor(task.status);
   const statusIndicator = getTaskStatusIndicator(task.status);
@@ -661,11 +665,11 @@ function PromptPreviewView({
         style={{
           flexGrow: 1,
           border: true,
-          borderColor: colors.accent.primary,
+          borderColor: isFocused ? colors.accent.primary : colors.border.muted,
           backgroundColor: colors.bg.secondary,
         }}
       >
-        <scrollbox style={{ flexGrow: 1, padding: 1 }}>
+        <scrollbox style={{ flexGrow: 1, padding: 1 }} focused={isFocused}>
           {promptPreview ? (
             <box style={{ flexDirection: 'column' }}>
               {promptPreview.split('\n').map((line, i) => {
@@ -743,12 +747,12 @@ function TaskOutputView({
   // Check if we're live streaming
   const isLiveStreaming = iterationTiming?.isRunning === true;
 
-  // Check if review is configured (not just if output contains divider)
-  // Keeps the split layout visible when reviewer output is empty
-  const isReviewEnabled = reviewerAgent !== undefined && reviewerAgent !== '';
-
   // Check if output actually has reviewer section
   const hasReviewOutput = iterationOutput?.includes(REVIEW_OUTPUT_DIVIDER) ?? false;
+
+  // Treat divider presence as implicit signal to keep split layout
+  // This preserves historical reviewer output even if review is currently disabled
+  const isReviewEnabled = (reviewerAgent !== undefined && reviewerAgent !== '') || hasReviewOutput;
 
   // For live streaming, prefer segments for TUI-native colors
   // For historical/completed output, parse the string to extract readable content
@@ -974,7 +978,7 @@ function TaskDetails({
   reviewerAgent?: string;
   promptPreview?: string;
   templateSource?: string;
-  outputFocus?: 'worker' | 'reviewer';
+  outputFocus?: 'worker' | 'reviewer' | 'content';
 }): ReactNode {
   if (viewMode === 'output') {
     return (
@@ -987,7 +991,7 @@ function TaskDetails({
         agentName={agentName}
         currentModel={currentModel}
         reviewerAgent={reviewerAgent}
-        outputFocus={outputFocus}
+        outputFocus={outputFocus === 'worker' || outputFocus === 'reviewer' ? outputFocus : undefined}
       />
     );
   }
@@ -998,11 +1002,12 @@ function TaskDetails({
         task={task}
         promptPreview={promptPreview}
         templateSource={templateSource}
+        isFocused={outputFocus === 'content'}
       />
     );
   }
 
-  return <TaskMetadataView task={task} />;
+  return <TaskMetadataView task={task} isFocused={outputFocus === 'content'} />;
 }
 
 /**

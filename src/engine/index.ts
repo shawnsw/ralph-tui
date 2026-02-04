@@ -81,7 +81,7 @@ async function buildPrompt(
   config: RalphConfig,
   tracker?: TrackerPlugin
 ): Promise<string> {
-  // Load recent progress for context (last 5 iterations)
+  // Load progress summary limited to 5 iterations for context
   const recentProgress = await getRecentProgressSummary(config.cwd, 5);
 
   // Load codebase patterns from progress.md (if any exist)
@@ -174,7 +174,7 @@ async function buildReviewPrompt(
   tracker: TrackerPlugin | null,
   reviewPromptTemplate?: string
 ): Promise<string> {
-  // Load recent progress for context (last 5 iterations)
+  // Load progress summary limited to 5 iterations for context
   const recentProgress = await getRecentProgressSummary(config.cwd, 5);
 
   // Load codebase patterns from progress.md (if any exist)
@@ -376,6 +376,16 @@ export class ExecutionEngine {
           `Review agent '${reviewConfig.plugin}' not available: ${reviewDetect.error}`
         );
       }
+
+      // Validate review model if specified
+      const reviewModel = this.config.review.model ?? this.config.model;
+      if (reviewModel) {
+        const modelError = reviewInstance.validateModel(reviewModel);
+        if (modelError) {
+          throw new Error(`Review model validation failed: ${modelError}`);
+        }
+      }
+
       this.reviewAgent = reviewInstance;
     }
 
@@ -1269,7 +1279,6 @@ export class ExecutionEngine {
 
         // Insert divider into live output stream so UI can split worker and reviewer
         this.state.currentOutput += REVIEW_OUTPUT_DIVIDER;
-        reviewStdout += REVIEW_OUTPUT_DIVIDER;
         this.emit({
           type: 'agent:output',
           timestamp: new Date().toISOString(),
@@ -1472,7 +1481,8 @@ export class ExecutionEngine {
           : reviewSummary;
       }
 
-      const combinedStdout = reviewStdout
+      // Combine worker and reviewer output with divider (only if review produced output)
+      const combinedStdout = reviewEnabled && reviewStdout.trim()
         ? `${agentResult.stdout}${REVIEW_OUTPUT_DIVIDER}${reviewStdout}`
         : agentResult.stdout;
       const combinedStderr = reviewStderr

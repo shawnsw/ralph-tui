@@ -963,53 +963,57 @@ export function IterationDetailView({
         {/* Agent output section(s) - split into worker and reviewer if review enabled */}
         {hasReviewOutput ? (
           <>
-            {/* Worker output section */}
-            {workerOutput && (
-              <box style={{ marginBottom: 2 }}>
-                <SectionHeader title={`Worker: ${workerAgent || historicContext?.agentPlugin || 'agent'}`} />
-                <scrollbox
-                  style={{
-                    padding: 1,
-                    backgroundColor: outputFocus === 'worker' ? colors.bg.tertiary : colors.bg.secondary,
-                    border: true,
-                    borderColor: outputFocus === 'worker' ? colors.accent.primary : colors.border.muted,
-                    flexDirection: 'column',
-                    maxHeight: 20,
-                  }}
-                >
-                  {renderOutputWithHighlighting(workerOutput)}
-                </scrollbox>
-                <box style={{ marginTop: 0 }}>
-                  <text fg={colors.fg.dim}>
-                    {outputFocus === 'worker' ? '[Focused - Tab to switch]' : '[Tab to focus]'}
-                  </text>
-                </box>
+            {/* Worker output section - always show when split layout active */}
+            <box style={{ marginBottom: 2 }}>
+              <SectionHeader title={`Worker: ${workerAgent || historicContext?.agentPlugin || 'agent'}`} />
+              <scrollbox
+                style={{
+                  padding: 1,
+                  backgroundColor: outputFocus === 'worker' ? colors.bg.tertiary : colors.bg.secondary,
+                  border: true,
+                  borderColor: outputFocus === 'worker' ? colors.accent.primary : colors.border.muted,
+                  flexDirection: 'column',
+                  maxHeight: 20,
+                }}
+              >
+                {workerOutput ? (
+                  renderOutputWithHighlighting(workerOutput)
+                ) : (
+                  <text fg={colors.fg.muted}>No worker output</text>
+                )}
+              </scrollbox>
+              <box style={{ marginTop: 0 }}>
+                <text fg={colors.fg.dim}>
+                  {outputFocus === 'worker' ? '[Focused - Tab to switch]' : '[Tab to focus]'}
+                </text>
               </box>
-            )}
+            </box>
 
-            {/* Reviewer output section */}
-            {reviewerOutput && (
-              <box style={{ marginBottom: 2 }}>
-                <SectionHeader title={`Reviewer: ${iteration.reviewAgent || 'reviewer'}`} />
-                <scrollbox
-                  style={{
-                    padding: 1,
-                    backgroundColor: outputFocus === 'reviewer' ? colors.bg.tertiary : colors.bg.secondary,
-                    border: true,
-                    borderColor: outputFocus === 'reviewer' ? colors.accent.primary : colors.border.muted,
-                    flexDirection: 'column',
-                    maxHeight: 20,
-                  }}
-                >
-                  {renderOutputWithHighlighting(reviewerOutput)}
-                </scrollbox>
-                <box style={{ marginTop: 0 }}>
-                  <text fg={colors.fg.dim}>
-                    {outputFocus === 'reviewer' ? '[Focused - Tab to switch]' : '[Tab to focus]'}
-                  </text>
-                </box>
+            {/* Reviewer output section - always show when split layout active */}
+            <box style={{ marginBottom: 2 }}>
+              <SectionHeader title={`Reviewer: ${iteration.reviewAgent || 'reviewer'}`} />
+              <scrollbox
+                style={{
+                  padding: 1,
+                  backgroundColor: outputFocus === 'reviewer' ? colors.bg.tertiary : colors.bg.secondary,
+                  border: true,
+                  borderColor: outputFocus === 'reviewer' ? colors.accent.primary : colors.border.muted,
+                  flexDirection: 'column',
+                  maxHeight: 20,
+                }}
+              >
+                {reviewerOutput ? (
+                  renderOutputWithHighlighting(reviewerOutput)
+                ) : (
+                  <text fg={colors.fg.muted}>No reviewer output</text>
+                )}
+              </scrollbox>
+              <box style={{ marginTop: 0 }}>
+                <text fg={colors.fg.dim}>
+                  {outputFocus === 'reviewer' ? '[Focused - Tab to switch]' : '[Tab to focus]'}
+                </text>
               </box>
-            )}
+            </box>
           </>
         ) : (
           /* Single output section when no review */
