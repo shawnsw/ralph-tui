@@ -1443,8 +1443,9 @@ export class ExecutionEngine {
           : reviewSummary;
       }
 
-      // Combine worker and reviewer output with divider (only if review produced output)
-      const combinedStdout = reviewEnabled && reviewStdout.trim()
+      // Combine worker and reviewer output with divider (always include divider when review enabled)
+      // This ensures saved logs match the live stream and clearly indicate review ran
+      const combinedStdout = reviewEnabled
         ? `${agentResult.stdout}${REVIEW_OUTPUT_DIVIDER}${reviewStdout}`
         : agentResult.stdout;
       const combinedStderr = reviewStderr

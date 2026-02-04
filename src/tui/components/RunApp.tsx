@@ -63,6 +63,9 @@ import type {
   ConflictResolutionResult,
 } from '../../parallel/types.js';
 
+// Divider used to separate worker and reviewer output
+const REVIEW_OUTPUT_DIVIDER = '\n\n===== REVIEW OUTPUT =====\n';
+
 /**
  * View modes for the RunApp component
  * - 'tasks': Show the task list (default)
@@ -1583,17 +1586,20 @@ export function RunApp({
           // Tasks remain always highlighted, Tab only switches focus for content sections
           if (detailsViewMode === 'output') {
             // Output view: cycle through worker/reviewer/subagentTree
+            // Check if reviewer pane is present: either configured OR output contains divider (historical)
             const reviewerConfigured = storedConfig?.review?.enabled && storedConfig?.review?.agent && storedConfig.review.agent.trim() !== '';
+            const hasReviewerOutput = displayIterationOutput?.includes(REVIEW_OUTPUT_DIVIDER) ?? false;
+            const reviewerPresent = reviewerConfigured || hasReviewerOutput;
 
             setFocusedPane((prev) => {
-              // Cycle: none (tasks) -> worker -> reviewer (if configured) -> subagentTree (if visible) -> none
+              // Cycle: none (tasks) -> worker -> reviewer (if present) -> subagentTree (if visible) -> none
               if (prev === 'tasks') {
                 // First Tab press: focus worker
                 return 'worker';
               }
               if (prev === 'worker') {
-                // From worker: go to reviewer if configured, else subagentTree if visible, else back to tasks
-                if (reviewerConfigured) return 'reviewer';
+                // From worker: go to reviewer if present, else subagentTree if visible, else back to tasks
+                if (reviewerPresent) return 'reviewer';
                 if (subagentPanelVisible) return 'subagentTree';
                 return 'tasks';
               }
