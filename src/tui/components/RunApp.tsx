@@ -2624,6 +2624,7 @@ export function RunApp({
         completedTasks={completedTasks}
         totalTasks={totalTasks}
         agentName={displayAgentName}
+        reviewerAgent={storedConfig?.review?.enabled && storedConfig?.review?.agent ? storedConfig.review.agent : undefined}
         trackerName={displayTrackerName}
         activeAgentState={isViewingRemote ? remoteActiveAgent : activeAgentState}
         rateLimitState={isViewingRemote ? remoteRateLimitState : rateLimitState}
@@ -2694,6 +2695,7 @@ export function RunApp({
             sandboxConfig={sandboxConfig}
             resolvedSandboxMode={resolvedSandboxMode}
             historicContext={iterationDetailHistoricContext}
+            workerAgent={agentPlugin}
           />
         ) : viewMode === 'parallel-overview' ? (
           // Parallel workers overview
