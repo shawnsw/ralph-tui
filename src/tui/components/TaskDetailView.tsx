@@ -172,8 +172,6 @@ export function TaskDetailView({ task, onBack: _onBack }: TaskDetailViewProps): 
     if (!value) return undefined;
     const cleaned = stripAnsiCodes(value)
       .replace(/\p{C}/gu, '')
-      .replace(/\x1b./g, '')
-      .replace(/[\x00-\x1F\x7F]/g, '')
       .trim();
     return cleaned.length > 0 ? cleaned : undefined;
   };
@@ -257,7 +255,7 @@ export function TaskDetailView({ task, onBack: _onBack }: TaskDetailViewProps): 
                   <text>
                     {' '}
                     {displayLabels.map((label, i) => (
-                      <span key={label}>
+                      <span key={`${label}-${i}`}>
                         <span fg={colors.accent.secondary}>{label}</span>
                         {i < displayLabels.length - 1 ? ', ' : ''}
                       </span>

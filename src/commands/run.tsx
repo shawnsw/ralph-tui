@@ -43,7 +43,6 @@ import {
 } from '../session/index.js';
 import { ExecutionEngine } from '../engine/index.js';
 import { ParallelExecutor, analyzeTaskGraph, shouldRunParallel, recommendParallelism } from '../parallel/index.js';
-import { createAiResolver } from '../parallel/ai-resolver.js';
 import type {
   WorkerDisplayState,
   MergeOperation,
@@ -1086,10 +1085,6 @@ interface RunAppWrapperProps {
   parallelConflictTaskTitle?: string;
   /** Whether AI conflict resolution is running */
   parallelAiResolving?: boolean;
-  /** The file currently being resolved by AI */
-  parallelCurrentlyResolvingFile?: string;
-  /** Whether to show the conflict panel (true during Phase 2 conflict resolution) */
-  parallelShowConflicts?: boolean;
   /** Maps task IDs to worker IDs for output routing in parallel mode */
   parallelTaskIdToWorkerId?: Map<string, string>;
   /** Task IDs that completed locally but merge failed (shows ⚠ in TUI) */
@@ -1110,10 +1105,12 @@ interface RunAppWrapperProps {
   onParallelKill?: () => Promise<void>;
   /** Callback to restart parallel execution after stop/complete */
   onParallelStart?: () => void;
-  /** Callback when user requests conflict resolution retry */
-  onConflictRetry?: () => Promise<void>;
-  /** Callback when user requests to skip a failed merge */
-  onConflictSkip?: () => void;
+  /** Callback to abort conflict resolution and rollback the merge */
+  onConflictAbort?: () => Promise<void>;
+  /** Callback to accept AI resolution for a specific file */
+  onConflictAccept?: (filePath: string) => void;
+  /** Callback to accept all AI resolutions */
+  onConflictAcceptAll?: () => void;
 }
 
 /**
@@ -1151,8 +1148,6 @@ function RunAppWrapper({
   parallelConflictTaskId,
   parallelConflictTaskTitle,
   parallelAiResolving,
-  parallelCurrentlyResolvingFile,
-  parallelShowConflicts,
   parallelTaskIdToWorkerId,
   parallelCompletedLocallyTaskIds,
   parallelAutoCommitSkippedTaskIds,
@@ -1163,8 +1158,9 @@ function RunAppWrapper({
   onParallelResume,
   onParallelKill,
   onParallelStart,
-  onConflictRetry,
-  onConflictSkip,
+  onConflictAbort,
+  onConflictAccept,
+  onConflictAcceptAll,
 }: RunAppWrapperProps) {
   const [showInterruptDialog, setShowInterruptDialog] = useState(false);
   const [storedConfig, setStoredConfig] = useState<StoredConfig | undefined>(initialStoredConfig);
@@ -1353,8 +1349,6 @@ function RunAppWrapper({
       parallelConflictTaskId={parallelConflictTaskId}
       parallelConflictTaskTitle={parallelConflictTaskTitle}
       parallelAiResolving={parallelAiResolving}
-      parallelCurrentlyResolvingFile={parallelCurrentlyResolvingFile}
-      parallelShowConflicts={parallelShowConflicts}
       parallelTaskIdToWorkerId={parallelTaskIdToWorkerId}
       parallelCompletedLocallyTaskIds={parallelCompletedLocallyTaskIds}
       parallelAutoCommitSkippedTaskIds={parallelAutoCommitSkippedTaskIds}
@@ -1365,8 +1359,9 @@ function RunAppWrapper({
       onParallelResume={onParallelResume}
       onParallelKill={onParallelKill}
       onParallelStart={onParallelStart}
-      onConflictRetry={onConflictRetry}
-      onConflictSkip={onConflictSkip}
+      onConflictAbort={onConflictAbort}
+      onConflictAccept={onConflictAccept}
+      onConflictAcceptAll={onConflictAcceptAll}
     />
   );
 }
@@ -1673,10 +1668,6 @@ async function runParallelWithTui(
     conflictTaskId: '',
     conflictTaskTitle: '',
     aiResolving: false,
-    /** The file currently being resolved by AI */
-    currentlyResolvingFile: '' as string,
-    /** Whether to show the conflict panel (set true at Phase 2 start, false when resolved) */
-    showConflicts: false,
     /** Maps task IDs to their assigned worker IDs for output routing */
     taskIdToWorkerId: new Map<string, string>(),
     /** Task IDs that completed locally but merge failed (shows ⚠ in TUI) */
@@ -1828,44 +1819,24 @@ async function runParallelWithTui(
 
       case 'conflict:ai-resolving':
         parallelState.aiResolving = true;
-        parallelState.currentlyResolvingFile = event.filePath;
-        // Show the conflict panel now that Phase 2 (resolution) has started
-        parallelState.showConflicts = true;
         break;
 
       case 'conflict:ai-resolved':
         parallelState.aiResolving = false;
-        parallelState.currentlyResolvingFile = '';
         parallelState.conflictResolutions = [...parallelState.conflictResolutions, event.result];
         break;
 
       case 'conflict:ai-failed':
         parallelState.aiResolving = false;
-        parallelState.currentlyResolvingFile = '';
         break;
 
-      case 'conflict:resolved': {
+      case 'conflict:resolved':
         parallelState.conflicts = [];
         parallelState.conflictResolutions = event.results;
         parallelState.conflictTaskId = '';
         parallelState.conflictTaskTitle = '';
         parallelState.aiResolving = false;
-        parallelState.currentlyResolvingFile = '';
-        // Hide the conflict panel now that resolution is complete
-        parallelState.showConflicts = false;
-        // Refresh merge queue to show updated status (conflicted -> completed)
-        parallelState.mergeQueue = [...parallelExecutor.getState().mergeQueue];
-        // Task successfully merged after conflict resolution — update tracking sets
-        // Remove from completedLocally (no more ⚠ warning) and add to merged (shows ✓)
-        const resolvedSet = new Set(parallelState.completedLocallyTaskIds);
-        resolvedSet.delete(event.taskId);
-        parallelState.completedLocallyTaskIds = resolvedSet;
-        parallelState.mergedTaskIds = new Set([
-          ...parallelState.mergedTaskIds,
-          event.taskId,
-        ]);
         break;
-      }
 
       case 'parallel:completed':
         currentState = completeSession(currentState);
@@ -1992,8 +1963,6 @@ async function runParallelWithTui(
         parallelConflictTaskId={parallelState.conflictTaskId}
         parallelConflictTaskTitle={parallelState.conflictTaskTitle}
         parallelAiResolving={parallelState.aiResolving}
-        parallelCurrentlyResolvingFile={parallelState.currentlyResolvingFile}
-        parallelShowConflicts={parallelState.showConflicts}
         parallelTaskIdToWorkerId={parallelState.taskIdToWorkerId}
         parallelCompletedLocallyTaskIds={parallelState.completedLocallyTaskIds}
         parallelAutoCommitSkippedTaskIds={parallelState.autoCommitSkippedTaskIds}
@@ -2018,25 +1987,42 @@ async function runParallelWithTui(
             triggerRerender?.();
           });
         }}
-        onConflictRetry={async () => {
-          // Re-attempt AI conflict resolution
-          parallelState.aiResolving = true;
-          triggerRerender?.();
+        onConflictAbort={async () => {
+          // Stop the executor gracefully. Full cleanup (worktrees, git state) is
+          // guaranteed by execute()'s finally block which calls this.cleanup().
+          // We clear UI conflict state in finally to ensure it runs even if stop() rejects.
           try {
-            await parallelExecutor.retryConflictResolution();
-            // State updates handled by conflict:resolved event
-          } catch {
-            // Retry failed - state updates handled by conflict:ai-failed event
+            await parallelExecutor.stop();
           } finally {
-            parallelState.aiResolving = false;
+            clearConflictState(parallelState);
             triggerRerender?.();
           }
         }}
-        onConflictSkip={() => {
-          // Skip this failed merge and continue
-          parallelExecutor.skipFailedConflict();
-          // Clear conflict state
-          clearConflictState(parallelState);
+        onConflictAccept={(filePath: string) => {
+          // Mark file as accepted - the AI resolution continues automatically
+          // This is primarily for user feedback; actual resolution is AI-driven
+          const resolution = findResolutionByPath(parallelState.conflictResolutions, filePath);
+          if (resolution?.success) {
+            // File already resolved by AI - nothing more to do
+            triggerRerender?.();
+            return;
+          }
+          if (!resolution) {
+            parallelState.conflictResolutions = [
+              ...parallelState.conflictResolutions,
+              {
+                filePath,
+                success: false,
+                method: 'ai',
+                error: 'No AI resolution available for this file',
+              },
+            ];
+          }
+          triggerRerender?.();
+        }}
+        onConflictAcceptAll={() => {
+          // Accept all resolutions - let AI continue and close panel
+          // The AI resolution process continues automatically
           triggerRerender?.();
         }}
       />
@@ -2990,17 +2976,6 @@ export async function executeRunCommand(args: string[]): Promise<void> {
         directMerge,
         filteredTaskIds,
       });
-
-      // Wire up AI conflict resolution if enabled (default: true)
-      const conflictResolutionEnabled = storedConfig?.conflictResolution?.enabled !== false;
-      if (conflictResolutionEnabled) {
-        // Pass conflict resolution config to RalphConfig for the resolver
-        const configWithConflictRes = {
-          ...config,
-          conflictResolution: storedConfig?.conflictResolution,
-        };
-        parallelExecutor.setAiResolver(createAiResolver(configWithConflictRes));
-      }
 
       // Track session branch info for completion guidance
       let sessionBranchForGuidance: string | null = null;

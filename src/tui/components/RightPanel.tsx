@@ -282,8 +282,6 @@ function TaskMetadataView({
     if (!value) return undefined;
     const cleaned = stripAnsiCodes(value)
       .replace(/\p{C}/gu, '')
-      .replace(/\x1b./g, '')
-      .replace(/[\x00-\x1F\x7F]/g, '')
       .trim();
     return cleaned.length > 0 ? cleaned : undefined;
   };
@@ -379,7 +377,7 @@ function TaskMetadataView({
               <text>
                 {' '}
                 {displayLabels.map((label, i) => (
-                  <span key={label}>
+                  <span key={`${label}-${i}`}>
                     <span fg={colors.accent.secondary}>{label}</span>
                     {i < displayLabels.length - 1 ? ', ' : ''}
                   </span>
@@ -906,7 +904,7 @@ function TaskOutputView({
   // For historical/completed output, parse the string to extract readable content
   // ALWAYS strip ANSI codes - they cause black background artifacts in OpenTUI
   const { workerOutput, reviewerOutput } = useMemo(() => {
-    if (!iterationOutput) return { workerOutput: undefined, reviewerOutput: undefined };
+    if (iterationOutput == null) return { workerOutput: undefined, reviewerOutput: undefined };
 
     // Split worker and reviewer on first divider only to avoid content loss
     const dividerIndex = hasReviewOutput
